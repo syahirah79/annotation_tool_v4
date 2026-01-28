@@ -31,7 +31,8 @@
     .list tr.selected { background: rgba(43,102,255,.18); }
     .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; padding: 2px 6px; border: 1px solid #24304a; border-radius: 8px; background:#0b1220; }
 
-    input[type="number"] { background:#0b1220; color:#e8eefc; border:1px solid #24304a; border-radius:10px; padding:8px; } //number inputs readable in dark mode
+    input[type="number"] { background:#0b1220; color:#e8eefc; border:1px solid #24304a; border-radius:10px; padding:8px; }
+    /*number inputs readable in dark mode*/
 
     canvas { background: #050814; border: 1px solid #24304a; border-radius: 12px; max-width: 100%; height: auto; }
   </style>
@@ -49,6 +50,11 @@
           <div>
             <div><b>1) Load folders</b></div>
             <div class="small">Images + Labels must share the same basename (e.g. <span class="kbd">abc.jpg</span> ↔ <span class="kbd">abc.txt</span>).</div>
+            <div style="height:10px"></div>
+            <div class="row">
+              <button id="pickSaveFolderBtn" class="secondary">Pick label save folder (Chrome/Edge)</button>
+              <span class="small" id="saveFolderText">No save folder selected</span>
+            </div>
           </div>
         </div>
 
@@ -128,10 +134,6 @@
           </div>
         </div>
         <div style="height:10px"></div>
-        <div class="row">
-          <button id="deleteBtn" class="danger" disabled>Delete selected</button>
-          <button id="clearBtn" class="secondary" disabled>Clear all</button>
-        </div>
         <div class="row">
           <button id="deleteBtn" class="danger" disabled>Delete selected</button>
           <button id="clearBtn" class="secondary" disabled>Clear all</button>
@@ -229,7 +231,8 @@ const state = {
   // drawing
   isDrawing: false,
   startPx: {x:0, y:0},
-  currPx:  {x:0, y:0}
+  currPx:  {x:0, y:0},
+  saveDirHandle: null,    // Folder handle for writing (File System Access API)
 };
 
 /** =========================
@@ -256,12 +259,16 @@ const ctx = canvas.getContext('2d');
 const boxesTbody = document.getElementById('boxesTbody');
 const imgMeta = document.getElementById('imgMeta');
 
-// addtion
+// addition
 const editXc = document.getElementById('editXc');
 const editYc = document.getElementById('editYc');
 const editW  = document.getElementById('editW');
 const editH  = document.getElementById('editH');
 const applyEditBtn = document.getElementById('applyEditBtn');
+
+// addition 02
+const pickSaveFolderBtn = document.getElementById('pickSaveFolderBtn');
+const saveFolderText = document.getElementById('saveFolderText');
 
 /** =========================
  *  HELPERS
@@ -343,6 +350,30 @@ function downloadText(filename, text) {
     a.remove();
   }, 0);
 }
+
+/* Implement folder picking + permission */
+async function supportsFileSystemAccess() {
+  return 'showDirectoryPicker' in window;
+}
+
+pickSaveFolderBtn.addEventListener('click', async () => {
+  try {
+    if (!(await supportsFileSystemAccess())) {
+      alert("Your browser doesn't support saving to a folder.\nUse Chrome or Edge on desktop.");
+      return;
+    }
+
+    // user chooses the folder where label .txt files live
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    state.saveDirHandle = handle;
+    saveFolderText.textContent = "Save folder selected ✅";
+    statusText.textContent = "✅ Save folder selected. 'Save YOLO' will overwrite txt in that folder.";
+  } catch (err) {
+    console.error(err);
+    statusText.textContent = "Save folder not selected.";
+  }
+});
+
 
 /** =========================
  *  UI INIT
@@ -619,12 +650,30 @@ clearBtn.addEventListener('click', () => {
   renderBoxTable();
 });
 
-downloadBtn.addEventListener('click', () => {
+downloadBtn.addEventListener('click', async () => {
   if (state.idx < 0) return;
   const bn = state.basenames[state.idx];
   const txt = toYoloTxt(state.boxes);
+
+  // If we have a save folder handle, try to overwrite in that folder
+  if (state.saveDirHandle) {
+    try {
+      const fileHandle = await state.saveDirHandle.getFileHandle(`${bn}.txt`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(txt);
+      await writable.close();
+      statusText.textContent = `✅ Saved to folder: ${bn}.txt`;
+      return;
+    } catch (err) {
+      console.error(err);
+      statusText.textContent = `⚠️ Could not write to folder. Downloading instead...`;
+      // fallback to download
+    }
+  }
+
+  // Fallback (always works)
   downloadText(`${bn}.txt`, txt);
-  
+  statusText.textContent = `⬇️ Downloaded: ${bn}.txt (replace it in your label folder)`;
 });
 
 //addition
@@ -663,4 +712,5 @@ window.addEventListener('keydown', (e) => {
 </script>
 </body>
 </html>
+
 
