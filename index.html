@@ -401,6 +401,140 @@
     
     <script type="text/babel">
         const AdvancedVehicleAnnotationTool = () => {
+            // ----------------------------
+            // YOLO label support
+            // ----------------------------
+            const YOLO_CLASS_NAMES = {
+              0: "class0_emergencyVehicle",
+              1: "class1_lightVehicle",
+              2: "class2_mediumVehicle",
+              3: "class3_heavyVehicle",
+              4: "class4_taxi",
+              5: "class5_bus",
+              6: "class_motocycle",
+              7: "singleWheel",
+              8: "doubleWheel",
+              9: "license_plate",
+              10: "license_plate_taxi",
+            };
+            
+            const baseName = (filename) => filename.replace(/\.[^/.]+$/, "");
+            
+            const safeParseFloat = (v) => {
+              const n = Number.parseFloat(v);
+              return Number.isFinite(n) ? n : null;
+            };
+            
+            const yoloToBboxXYXY = (clsId, xc, yc, w, h, imgW, imgH) => {
+              const xCenterPx = xc * imgW;
+              const yCenterPx = yc * imgH;
+              const wPx = w * imgW;
+              const hPx = h * imgH;
+            
+              const x1 = Math.max(0, Math.round(xCenterPx - wPx / 2));
+              const y1 = Math.max(0, Math.round(yCenterPx - hPx / 2));
+              const x2 = Math.min(imgW, Math.round(xCenterPx + wPx / 2));
+              const y2 = Math.min(imgH, Math.round(yCenterPx + hPx / 2));
+            
+              return [x1, y1, x2, y2];
+            };
+            
+            const buildAnnotationFromYolo = (clsId, bboxXYXY) => {
+              const name = YOLO_CLASS_NAMES[clsId] ?? `class_${clsId}`;
+            
+              // Keep compatible with your UI assumptions:
+              // - Wheels are special types already used by your tool
+              // - Vehicles use type="vehicle" so the form loads nicely
+              // - Plates can be "license_plate" (no vehicle form, but boxes still appear)
+              if (clsId === 7) {
+                return {
+                  id: Date.now() + Math.random(),
+                  type: "singleWheel",
+                  bbox: bboxXYXY,
+                  parent_id: null,
+                  attributes: { yolo_class_id: clsId, yolo_class_name: name },
+                };
+              }
+            
+              if (clsId === 8) {
+                return {
+                  id: Date.now() + Math.random(),
+                  type: "doubleWheel",
+                  bbox: bboxXYXY,
+                  parent_id: null,
+                  attributes: { yolo_class_id: clsId, yolo_class_name: name },
+                };
+              }
+            
+              if (clsId === 9 || clsId === 10) {
+                return {
+                  id: Date.now() + Math.random(),
+                  type: "license_plate",
+                  bbox: bboxXYXY,
+                  parent_id: null,
+                  attributes: { yolo_class_id: clsId, yolo_class_name: name },
+                };
+              }
+            
+              // Default: treat as vehicle so your vehicle form / list behaves well
+              return {
+                id: Date.now() + Math.random(),
+                type: "vehicle",
+                bbox: bboxXYXY,
+                view_pose: "rear",
+                direction: "northbound",
+                vehicle_info: {
+                  category: name,     // <- stores YOLO class name in your existing structure
+                  subcategory: "",
+                  country: "MY",
+                  brand: "",
+                  model: "",
+                  color: "",
+                  operator: "",
+                  number_of_seats: 4,
+                },
+                mechanical: {
+                  number_of_wheels_visible: 4,
+                  number_of_axles_inferred: 2,
+                  number_of_axles_raised: 0,
+                  truck_trailer_labels_visible: false,
+                  cargo_present: false,
+                },
+                attributes: {
+                  is_taxi: clsId === 4,
+                  is_bus: clsId === 5,
+                  is_emergency_vehicle: clsId === 0,
+                  yolo_class_id: clsId,
+                  yolo_class_name: name,
+                },
+                parent_id: null,
+              };
+            };
+            
+            const parseYoloTxtToObjects = (txt, imgW, imgH) => {
+              const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+              const objects = [];
+            
+              for (const line of lines) {
+                // YOLO: class x_center y_center w h (normalised)
+                const parts = line.split(/\s+/);
+                if (parts.length < 5) continue;
+            
+                const clsId = Number.parseInt(parts[0], 10);
+                const xc = safeParseFloat(parts[1]);
+                const yc = safeParseFloat(parts[2]);
+                const w = safeParseFloat(parts[3]);
+                const h = safeParseFloat(parts[4]);
+            
+                if (!Number.isFinite(clsId) || xc === null || yc === null || w === null || h === null) continue;
+            
+                const bbox = yoloToBboxXYXY(clsId, xc, yc, w, h, imgW, imgH);
+                objects.push(buildAnnotationFromYolo(clsId, bbox));
+              }
+            
+              return objects;
+            };
+
             const [image, setImage] = React.useState(null);
             const [imagePreview, setImagePreview] = React.useState(null);
             const [isDragging, setIsDragging] = React.useState(false);
@@ -430,6 +564,9 @@
             const [selectedDirectory, setSelectedDirectory] = React.useState(null);
             const [saveDirectoryName, setSaveDirectoryName] = React.useState('');
             const [imageAnnotationsMap, setImageAnnotationsMap] = React.useState({});
+
+            const [labelFileMap, setLabelFileMap] = React.useState({}); 
+            // maps baseName -> File (the .txt file)
 
             // Bbox editing states
             const [isDraggingBox, setIsDraggingBox] = React.useState(false);
@@ -600,6 +737,30 @@
                                     timestamp: new Date().toISOString()
                                 },
                                 objects: []
+                                // If labels exist for this image, auto-load YOLO boxes
+                                const lbl = labelFileMap[baseName(file.name)];
+                                if (lbl) {
+                                  lbl.text()
+                                    .then((txt) => {
+                                      const objects = parseYoloTxtToObjects(txt, img.width, img.height);
+                                
+                                      setAnnotations({
+                                        image: {
+                                          filename: file.name,
+                                          width: img.width,
+                                          height: img.height,
+                                          timestamp: new Date().toISOString(),
+                                        },
+                                        objects,
+                                      });
+                                
+                                      console.log(`🏷️ Loaded ${objects.length} YOLO boxes for ${file.name}`);
+                                    })
+                                    .catch((err) => {
+                                      console.error("Failed to read label file:", err);
+                                    });
+                                }
+
                             });
                             // Reset form to defaults
                             setVehicleForm({
@@ -830,6 +991,24 @@
                 if (files && files.length > 0) {
                     handleDirectoryUpload(files);
                 }
+            };
+
+            const handleLabelDirectoryUpload = (files) => {
+                
+              const txtFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".txt"));
+            
+              if (txtFiles.length === 0) {
+                alert("No .txt label files found in the selected label directory!");
+                return;
+              }
+            
+              const map = {};
+              for (const f of txtFiles) {
+                map[baseName(f.name)] = f;
+              }
+            
+              setLabelFileMap(map);
+              console.log(`✅ Loaded ${txtFiles.length} YOLO label files`);
             };
             
             const handleFileSelect = (e) => {
@@ -2231,6 +2410,22 @@
                                 <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #0ea5e9' }}>
                                     <div style={{ fontSize: '10px', color: '#0c4a6e', marginBottom: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                         📁 Folder/Directory
+                                    <div style={{ position: 'relative', marginTop: '12px' }}>
+                                          <input 
+                                            type="file" 
+                                            webkitdirectory="true"
+                                            directory="true"
+                                            multiple
+                                            accept=".txt"
+                                            onChange={handleLabelDirectorySelect}
+                                            className="input-field"
+                                            style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }}
+                                          />
+                                          <button className="btn-secondary" style={{ width: '100%' }}>
+                                            🏷️ Select Label Folder (YOLO .txt)
+                                          </button>
+                                        </div>
+
                                     </div>
                                     <div style={{ position: 'relative' }}>
                                         <input 
@@ -4221,6 +4416,7 @@
     </script>
 </body>
 </html>
+
 
 
 
