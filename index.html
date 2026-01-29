@@ -495,6 +495,10 @@
 
 			const [imageByBase, setImageByBase] = React.useState({});      // { baseName: File }
 			const [labelByBase, setLabelByBase] = React.useState({});      // { baseName: parsedJson }
+			
+			// YOLO TXT labels
+			const [yoloFiles, setYoloFiles] = React.useState([]);          // array<File>
+			const [yoloByBase, setYoloByBase] = React.useState({});        // { baseName: { text, fileName } }
 
 			const [datasetIndex, setDatasetIndex] = React.useState([]);    // array of rows for UI + navigation
 			const [currentBase, setCurrentBase] = React.useState(null);    // which baseName is “active”
@@ -702,30 +706,77 @@
 			// ------------------------------
 			// Dataset index helpers (Images + Labels)
 			// ------------------------------
-			const rebuildDatasetIndex = ({ nextImageByBase, nextLabelByBase } = {}) => {
+			const rebuildDatasetIndex = ({ nextImageByBase, nextLabelByBase, nextYoloByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-				const labels = nextLabelByBase ?? labelByBase;
 
-				const bases = new Set([...Object.keys(imgs), ...Object.keys(labels)]);
+				const jsonLabels = nextLabelByBase ?? labelByBase;   // JSON labels
+				const yoloLabels = nextYoloByBase ?? yoloByBase;     // YOLO txt labels
+
+				const bases = new Set([
+					...Object.keys(imgs),
+					...Object.keys(jsonLabels),
+					...Object.keys(yoloLabels),
+				]);
 
 				const rows = Array.from(bases)
 					.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
 					.map((b) => {
 						const img = imgs[b] || null;
-						const lab = labels[b] || null;
+						const jsonLab = jsonLabels[b] || null;
+						const yoloLab = yoloLabels[b] || null;
+
+						const hasJson = !!jsonLab;
+						const hasYolo = !!yoloLab;
+
+						let status = "image_only";
+						if (!img && (hasJson || hasYolo)) status = "label_only";
+						else if (img && hasJson) status = "paired_json";
+						else if (img && !hasJson && hasYolo) status = "paired_yolo";
 
 						return {
 							base: b,
 							hasImage: !!img,
-							hasLabel: !!lab,
+
+							hasJson,
+							hasYolo,
+
 							imageName: img?.name ?? "",
-							labelName: lab ? (lab.__labelFileName ?? `${b}.json`) : "",
-							status: img && lab ? "paired" : img ? "image_only" : "label_only",
+							jsonLabelName: hasJson ? (jsonLab.__labelFileName ?? `${b}.json`) : "",
+							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`) : "",
+
+							status,
 						};
 					});
 
 				setDatasetIndex(rows);
 			};
+
+			
+			// ------------------------------
+			// YOLO class map (id -> name)
+			// ------------------------------
+			const YOLO_CLASSES = {
+			  0: "class0_emergencyVehicle",
+			  1: "class1_lightVehicle",
+			  2: "class2_mediumVehicle",
+			  3: "class3_heavyVehicle",
+			  4: "class4_taxi",
+			  5: "class5_bus",
+			  6: "class_motocycle",
+			  7: "singleWheel",
+			  8: "doubleWheel",
+			  9: "license_plate",
+			  10: "license_plate_taxi",
+			};
+
+			const prettyYoloName = (raw) => {
+			  if (!raw) return "";
+			  return raw
+				.replace(/^class\d+_/, "")   // remove "class0_" prefix
+				.replace(/_/g, " ")
+				.replace(/\b\w/g, (c) => c.toUpperCase());
+			};
+
 
 			const pickFirstOpenableBase = ({ nextImageByBase, nextLabelByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
@@ -737,13 +788,14 @@
 				if (imgBases.length === 0) return null;
 
 				// Prefer first image that has no label yet
-				const firstUnlabelled = imgBases.find((b) => imgs[b] && !labels[b]);
+				const firstUnlabelled = imgBases.find((b) => imgs[b] && !labelByBase[b] && !yoloByBase[b]);
 				return firstUnlabelled ?? imgBases[0];
 			};
 
-			const openByBase = (base, { nextImageByBase, nextLabelByBase } = {}) => {
+			const openByBase = (base, { nextImageByBase, nextLabelByBase, nextYoloByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-				const labels = nextLabelByBase ?? labelByBase;
+				const jsonLabels = nextLabelByBase ?? labelByBase;
+				const yoloLabels = nextYoloByBase ?? yoloByBase;
 
 				const imgFile = imgs[base];
 				if (!imgFile) {
@@ -751,18 +803,25 @@
 					return;
 				}
 
-				const lab = labels[base] || null;
-
 				setCurrentBase(base);
 
-				// If label exists, load image + annotations
-				if (lab) {
-					loadImageWithAnnotations(imgFile, lab);
-				} else {
-					// Otherwise just load image fresh
-					handleImageUpload(imgFile);
+				const jsonLab = jsonLabels[base] || null;
+				const yoloLab = yoloLabels[base] || null;
+
+				if (jsonLab) {
+					loadImageWithAnnotations(imgFile, jsonLab);
+					return;
 				}
+
+				if (yoloLab) {
+					loadImageWithYolo(imgFile, yoloLab);
+					return;
+				}
+
+				// No labels found
+				handleImageUpload(imgFile);
 			};
+
 
 			const navigateByIndex = (direction) => {
 				const imageRows = datasetIndex.filter((r) => r.hasImage);
@@ -1067,7 +1126,42 @@
               // Rebuild index using whatever images are currently loaded too
               rebuildDatasetIndex({ nextLabelByBase: next });
             };
+			
+			const handleYoloDirectorySelect = async (e) => {
+			  const files = e.target.files;
+			  if (!files || files.length === 0) return;
 
+			  const txtFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".txt"));
+			  if (txtFiles.length === 0) {
+				alert("No .txt files found in the selected YOLO labels folder!");
+				return;
+			  }
+
+			  setYoloFiles(txtFiles);
+
+			  const pairs = await Promise.all(txtFiles.map(async (f) => {
+				try {
+				  const text = await f.text();
+				  const b = baseName(f.name); // e.g. IMG_001.txt -> IMG_001
+				  return [b, { text, fileName: f.name }];
+				} catch (err) {
+				  console.warn("Failed reading YOLO txt:", f.name, err);
+				  return null;
+				}
+			  }));
+
+			  const next = {};
+			  for (const p of pairs) {
+				if (!p) continue;
+				const [b, data] = p;
+				next[b] = data;
+			  }
+
+			  setYoloByBase(next);
+
+			  // update dataset index (we'll update rebuildDatasetIndex in step 4)
+			  rebuildDatasetIndex({ nextYoloByBase: next });
+			};
 
             // Helper function to load image with annotations
             const loadImageWithAnnotations = (imageFile, jsonData) => {
@@ -1129,6 +1223,89 @@
                 };
                 reader.readAsDataURL(imageFile);
             };
+			
+			const parseYoloTxtToObjects = (txt, imgW, imgH) => {
+			  const lines = (txt || "")
+				.split(/\r?\n/)
+				.map(l => l.trim())
+				.filter(l => l.length > 0);
+
+			  const objects = [];
+
+			  for (let i = 0; i < lines.length; i++) {
+				const parts = lines[i].split(/\s+/);
+				if (parts.length < 5) continue;
+
+				const classId = Number(parts[0]);
+				const xc = Number(parts[1]);
+				const yc = Number(parts[2]);
+				const w = Number(parts[3]);
+				const h = Number(parts[4]);
+
+				if ([classId, xc, yc, w, h].some(v => Number.isNaN(v))) continue;
+
+				const x1 = Math.max(0, Math.round((xc - w / 2) * imgW));
+				const y1 = Math.max(0, Math.round((yc - h / 2) * imgH));
+				const x2 = Math.min(imgW, Math.round((xc + w / 2) * imgW));
+				const y2 = Math.min(imgH, Math.round((yc + h / 2) * imgH));
+
+				const rawName = YOLO_CLASSES[classId] ?? `class_${classId}`;
+				const prettyName = prettyYoloName(rawName);
+
+				let type = "vehicle";
+				let wheel_type = undefined;
+
+				// Your classes
+				if (classId === 9 || classId === 10 || rawName.includes("license_plate")) type = "license_plate";
+				if (classId === 7 || rawName.toLowerCase().includes("singlewheel")) { type = "wheel"; wheel_type = "single"; }
+				if (classId === 8 || rawName.toLowerCase().includes("doublewheel")) { type = "wheel"; wheel_type = "double"; }
+
+				objects.push({
+				  id: `yolo_${Date.now()}_${i}`,
+				  type,
+				  bbox: [x1, y1, x2, y2],
+				  // keep YOLO info for display/debug
+				  yolo_class_id: classId,
+				  yolo_class_name: prettyName,
+				  ...(wheel_type ? { wheel_type } : {}),
+				});
+			  }
+
+			  return objects;
+			};
+
+			const loadImageWithYolo = (imageFile, yoloData) => {
+			  const reader = new FileReader();
+			  reader.onload = (e) => {
+				const img = new Image();
+				img.onload = () => {
+				  setImage(imageFile);
+				  setImagePreview(e.target.result);
+
+				  const objs = parseYoloTxtToObjects(yoloData.text, img.width, img.height);
+
+				  setAnnotations({
+					image: {
+					  filename: imageFile.name,
+					  width: img.width,
+					  height: img.height,
+					  timestamp: new Date().toISOString(),
+					},
+					objects: objs,
+				  });
+
+				  setSelectedAnnotation(null);
+				  setIsDrawing(false);
+
+				  // Optional: a friendly message
+				  showTemporaryMessage(`✅ Loaded YOLO: ${objs.length} boxes\n${yoloData.fileName}`);
+				};
+				img.src = e.target.result;
+			  };
+			  reader.readAsDataURL(imageFile);
+			};
+
+			
             const handleDragOver = (e) => {
                 e.preventDefault();
                 setIsDragging(true);
@@ -2465,6 +2642,43 @@
                                     </div>
                                 </div>
 								
+								{/* YOLO Labels Folder Upload */}
+								<div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #06b6d4' }}>
+								  <div style={{ fontSize: '10px', color: '#0e7490', marginBottom: '4px', fontWeight: 'bold' }}>
+									🏷️ Labels Folder (YOLO .txt)
+								  </div>
+
+								  <div style={{ position: 'relative' }}>
+									<input
+									  type="file"
+									  webkitdirectory="true"
+									  directory="true"
+									  multiple
+									  accept=".txt,text/plain"
+									  onChange={handleYoloDirectorySelect}
+									  style={{ opacity: 0, position: 'absolute', zIndex: -1 }}
+									  id="yolo-directory-input"
+									/>
+									<label
+									  htmlFor="yolo-directory-input"
+									  className="input-field"
+									  style={{
+										display: 'block',
+										cursor: 'pointer',
+										textAlign: 'center',
+										backgroundColor: 'white',
+										border: '2px dashed #06b6d4',
+										color: '#0e7490',
+										padding: '6px 8px',
+										fontSize: '11px'
+									  }}
+									>
+									  {yoloFiles.length > 0 ? `🏷️ ${yoloFiles.length} TXTs` : '🏷️ Choose YOLO Labels Folder'}
+									</label>
+								  </div>
+								</div>
+
+								
 								{/* Dataset Index */}
 								<div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
 									<div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
@@ -2490,7 +2704,12 @@
 									</div>
 
 									<div style={{ fontSize: '10px', color: '#374151', marginBottom: '8px' }}>
-										Images: <b>{Object.keys(imageByBase).length}</b> | Labels: <b>{Object.keys(labelByBase).length}</b> | Pairs: <b>{datasetIndex.filter(r => r.status === 'paired').length}</b>
+										Images: <b>{Object.keys(imageByBase).length}</b>
+										{" | "}JSON: <b>{Object.keys(labelByBase).length}</b>
+										{" | "}YOLO: <b>{Object.keys(yoloByBase).length}</b>
+										{" | "}Paired(JSON): <b>{datasetIndex.filter(r => r.status === 'paired_json').length}</b>
+										{" | "}Paired(YOLO): <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
+
 									</div>
 
 									<div className="scrollable-panel" style={{ maxHeight: '220px', paddingRight: '6px' }}>
@@ -2511,11 +2730,14 @@
 													}}
 												>
 													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-														{row.status === 'paired' ? '✅' : '🟡'} {row.base}
+														{row.status === 'paired_json' ? '✅J' : row.status === 'paired_yolo' ? '✅Y' : '🟡'}
 													</div>
 													<div style={{ fontSize: '10px', color: '#6b7280' }}>
 														{row.imageName}
-														{row.hasLabel ? ` • ${row.labelName}` : ' • (no label)'}
+														{row.hasJson ? ` • ${row.jsonLabelName}` : ''}
+														{row.hasYolo ? ` • ${row.yoloLabelName}` : ''}
+														{(!row.hasJson && !row.hasYolo) ? ' • (no label)' : ''}
+
 													</div>
 												</div>
 											))
@@ -3044,7 +3266,15 @@
                                                 
                                                 
                                                 <div className="bbox-label">
-                                                    {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                    {getAnnotationIcon(obj.type, obj.wheel_type)} {
+													  obj.yolo_class_name
+														? obj.yolo_class_name
+														: (obj.type === 'vehicle'
+															? (vehicleForm.category || 'VEHICLE')
+															: obj.type.replace('_', ' ').toUpperCase()
+														  )
+													}
+
                                                     {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                     {obj.type === 'vehicle' && vehicleForm.subcategory && ` (${vehicleForm.subcategory})`}
                                                 </div>                                                
