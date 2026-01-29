@@ -395,8 +395,7 @@
         }
     </script>
 
-    <!-- Your existing div starts here -->
-    <div id="root"></div>    
+    <!-- Your existing div starts here -->  
     <div id="root"></div>
     
     <script type="text/babel">
@@ -490,6 +489,15 @@
                 chainOfThought: []               
             });
             
+            // Add new state: image map, label map, and index
+			const [imageFiles, setImageFiles] = React.useState([]);        // array<File>
+			const [labelFiles, setLabelFiles] = React.useState([]);        // array<File>
+
+			const [imageByBase, setImageByBase] = React.useState({});      // { baseName: File }
+			const [labelByBase, setLabelByBase] = React.useState({});      // { baseName: parsedJson }
+
+			const [datasetIndex, setDatasetIndex] = React.useState([]);    // array of rows for UI + navigation
+			const [currentBase, setCurrentBase] = React.useState(null);    // which baseName is “active”
             
             const fileInputRef = React.useRef(null);
             const imageRef = React.useRef(null);
@@ -555,19 +563,36 @@
             };
             
             const handleDirectoryUpload = (files) => {
-                const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
-                
-                if (imageFiles.length === 0) {
-                    alert('No image files found in the selected directory!');
-                    return;
-                }
-                
-                setImageDirectory(imageFiles);
+              const imgs = Array.from(files).filter(file => file.type.startsWith('image/'));
+            
+              if (imgs.length === 0) {
+                alert('No image files found in the selected directory!');
+                return;
+              }
+            
+              setImageFiles(imgs);
+              setImageDirectory(imgs);        // keep your existing behaviour if used elsewhere
+            
+              const imgMap = {};
+              for (const f of imgs) {
+                imgMap[baseName(f.name)] = f;
+              }
+              setImageByBase(imgMap);
+            
+              // Build / refresh index now that images exist
+              rebuildDatasetIndex({ nextImageByBase: imgMap });
+            
+              // Optional: auto-open the first unlabelled item instead of index 0
+              const first = pickFirstOpenableBase({ nextImageByBase: imgMap });
+              if (first) {
+                openByBase(first, { nextImageByBase: imgMap });
+              } else {
+                // fallback to your existing behaviour
                 setCurrentImageIndex(0);
-                
-                // Load the first image
-                loadImageAtIndex(imageFiles, 0);
+                loadImageAtIndex(imgs, 0);
+              }
             };
+
 
 
             const loadImageAtIndex = (files, index) => {
@@ -670,6 +695,93 @@
                 setCurrentImageIndex(newIndex);
                 loadImageAtIndex(imageDirectory, newIndex);
             };
+            
+            // helper for Add new state: image map, label map, and index
+            const baseName = (filename) => filename.replace(/\.[^/.]+$/, "");
+			
+			// ------------------------------
+			// Dataset index helpers (Images + Labels)
+			// ------------------------------
+			const rebuildDatasetIndex = ({ nextImageByBase, nextLabelByBase } = {}) => {
+				const imgs = nextImageByBase ?? imageByBase;
+				const labels = nextLabelByBase ?? labelByBase;
+
+				const bases = new Set([...Object.keys(imgs), ...Object.keys(labels)]);
+
+				const rows = Array.from(bases)
+					.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+					.map((b) => {
+						const img = imgs[b] || null;
+						const lab = labels[b] || null;
+
+						return {
+							base: b,
+							hasImage: !!img,
+							hasLabel: !!lab,
+							imageName: img?.name ?? "",
+							labelName: lab ? (lab.__labelFileName ?? `${b}.json`) : "",
+							status: img && lab ? "paired" : img ? "image_only" : "label_only",
+						};
+					});
+
+				setDatasetIndex(rows);
+			};
+
+			const pickFirstOpenableBase = ({ nextImageByBase, nextLabelByBase } = {}) => {
+				const imgs = nextImageByBase ?? imageByBase;
+				const labels = nextLabelByBase ?? labelByBase;
+
+				const imgBases = Object.keys(imgs).sort((a, b) =>
+					a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+				);
+				if (imgBases.length === 0) return null;
+
+				// Prefer first image that has no label yet
+				const firstUnlabelled = imgBases.find((b) => imgs[b] && !labels[b]);
+				return firstUnlabelled ?? imgBases[0];
+			};
+
+			const openByBase = (base, { nextImageByBase, nextLabelByBase } = {}) => {
+				const imgs = nextImageByBase ?? imageByBase;
+				const labels = nextLabelByBase ?? labelByBase;
+
+				const imgFile = imgs[base];
+				if (!imgFile) {
+					alert(`No image found for base "${base}"`);
+					return;
+				}
+
+				const lab = labels[base] || null;
+
+				setCurrentBase(base);
+
+				// If label exists, load image + annotations
+				if (lab) {
+					loadImageWithAnnotations(imgFile, lab);
+				} else {
+					// Otherwise just load image fresh
+					handleImageUpload(imgFile);
+				}
+			};
+
+			const navigateByIndex = (direction) => {
+				const imageRows = datasetIndex.filter((r) => r.hasImage);
+				if (imageRows.length === 0) return;
+
+				const cur = currentBase ?? imageRows[0].base;
+				const idx = imageRows.findIndex((r) => r.base === cur);
+				const safeIdx = idx >= 0 ? idx : 0;
+
+				const nextIdx =
+					direction === "next"
+						? (safeIdx + 1) % imageRows.length
+						: safeIdx === 0
+						? imageRows.length - 1
+						: safeIdx - 1;
+
+				openByBase(imageRows[nextIdx].base);
+			};
+
 
             // Helper function to show temporary messages under the image
             const showTemporaryMessage = (message) => {
@@ -900,6 +1012,62 @@
                     alert('Error reading JSON file: ' + error.message);
                 }
             };
+            
+            // Implement the label folder handler (parse JSONs into a map)
+            const handleLabelDirectorySelect = async (e) => {
+              const files = e.target.files;
+              if (!files || files.length === 0) return;
+            
+              const jsonFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
+              if (jsonFiles.length === 0) {
+                alert("No JSON files found in the selected labels folder!");
+                return;
+              }
+            
+              setLabelFiles(jsonFiles);
+            
+              // Parse JSON files -> labelByBase
+              const parsedPairs = await Promise.all(
+                jsonFiles.map(async (f) => {
+                  try {
+                    const text = await f.text();
+                    const data = JSON.parse(text);
+            
+                    // Optional: validate expected structure (you already do this in single JSON loader)
+                    if (!data.image || !data.objects) {
+                      console.warn("Skipping invalid JSON:", f.name);
+                      return null;
+                    }
+            
+                    const bFromJson = data?.image?.filename ? baseName(data.image.filename) : null;
+					const bFromFile = baseName(f.name);
+					const b = bFromJson || bFromFile;
+
+					// Keep label filename for display/debug
+					data.__labelFileName = f.name;
+
+					return [b, data];
+
+                  } catch (err) {
+                    console.warn("Failed parsing:", f.name, err);
+                    return null;
+                  }
+                })
+              );
+            
+              const next = {};
+              for (const pair of parsedPairs) {
+                if (!pair) continue;
+                const [b, data] = pair;
+                next[b] = data;
+              }
+            
+              setLabelByBase(next);
+            
+              // Rebuild index using whatever images are currently loaded too
+              rebuildDatasetIndex({ nextLabelByBase: next });
+            };
+
 
             // Helper function to load image with annotations
             const loadImageWithAnnotations = (imageFile, jsonData) => {
@@ -2194,8 +2362,6 @@
                                 📁 Image & JSON Upload
                             </h2>
 
-
-
                             {/* Compact Upload Section */}
                             <div style={{ marginBottom: '16px' }}>
                                 {/* Single Image Upload - Compact */}
@@ -2262,6 +2428,102 @@
                                         </label>
                                     </div>
                                 </div>
+                                
+                                {/* Labels Folder Upload */}
+                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #8b5cf6' }}>
+                                    <div style={{ fontSize: '10px', color: '#4c1d95', marginBottom: '4px', fontWeight: 'bold' }}>
+                                        🏷️ Labels Folder (JSON)
+                                    </div>
+                                
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type="file"
+                                            webkitdirectory="true"
+                                            directory="true"
+                                            multiple
+                                            accept=".json,application/json"
+                                            onChange={handleLabelDirectorySelect}
+                                            style={{ opacity: 0, position: 'absolute', zIndex: -1 }}
+                                            id="label-directory-input"
+                                            />
+                                        <label
+                                            htmlFor="label-directory-input"
+                                            className="input-field"
+                                            style={{
+                                                display: 'block',
+                                                cursor: 'pointer',
+                                                textAlign: 'center',
+                                                backgroundColor: 'white',
+                                                border: '2px dashed #8b5cf6',
+                                                color: '#4c1d95',
+                                                padding: '6px 8px',
+                                                fontSize: '11px'
+                                            }}
+                                        >
+                                            {labelFiles.length > 0 ? `🏷️ ${labelFiles.length} JSONs` : '🏷️ Choose Labels Folder'}
+                                        </label>
+                                    </div>
+                                </div>
+								
+								{/* Dataset Index */}
+								<div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+									<div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
+										🗂️ Dataset Index
+									</div>
+
+									<div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+										<button className="btn-secondary" onClick={() => rebuildDatasetIndex()} style={{ flex: 1 }}>
+											🔄 Rebuild
+										</button>
+										<button className="btn-secondary" onClick={() => currentBase ? openByBase(currentBase) : null} style={{ flex: 1 }}>
+											▶️ Open Current
+										</button>
+									</div>
+
+									<div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+										<button className="btn-secondary" onClick={() => navigateByIndex('prev')} style={{ flex: 1 }}>
+											⬅️ Prev
+										</button>
+										<button className="btn-secondary" onClick={() => navigateByIndex('next')} style={{ flex: 1 }}>
+											Next ➡️
+										</button>
+									</div>
+
+									<div style={{ fontSize: '10px', color: '#374151', marginBottom: '8px' }}>
+										Images: <b>{Object.keys(imageByBase).length}</b> | Labels: <b>{Object.keys(labelByBase).length}</b> | Pairs: <b>{datasetIndex.filter(r => r.status === 'paired').length}</b>
+									</div>
+
+									<div className="scrollable-panel" style={{ maxHeight: '220px', paddingRight: '6px' }}>
+										{datasetIndex.length === 0 ? (
+											<div style={{ fontSize: '11px', color: '#6b7280' }}>Load folders to build the index.</div>
+										) : (
+											datasetIndex.filter(r => r.hasImage).map((row) => (
+												<div
+													key={row.base}
+													onClick={() => openByBase(row.base)}
+													style={{
+													padding: '8px',
+														borderRadius: '8px',
+														border: '1px solid #e5e7eb',
+														background: row.base === currentBase ? '#fff7ed' : 'white',
+														cursor: 'pointer',
+														marginBottom: '6px'
+													}}
+												>
+													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
+														{row.status === 'paired' ? '✅' : '🟡'} {row.base}
+													</div>
+													<div style={{ fontSize: '10px', color: '#6b7280' }}>
+														{row.imageName}
+														{row.hasLabel ? ` • ${row.labelName}` : ' • (no label)'}
+													</div>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+
+
 
                             </div>
 
