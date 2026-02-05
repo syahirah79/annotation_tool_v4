@@ -3434,370 +3434,332 @@
                                 
 
                                 
-                                {/* Tabs for different sections */}
-                                <div className="tabs">
-                                    <button 
-                                        className={`tab ${activeTab === 'basic' ? 'active' : ''}`}
-                                        onClick={() => setActiveTab('basic')}
-                                    >
-                                        Basic
-                                    </button>
-                                    <button 
-                                        className={`tab ${activeTab === 'mechanical' ? 'active' : ''}`}
-                                        onClick={() => setActiveTab('mechanical')}
-                                    >
-                                        Mechanical
-                                    </button>
-                                    <button 
-                                        className={`tab ${activeTab === 'attributes' ? 'active' : ''}`}
-                                        onClick={() => setActiveTab('attributes')}
-                                    >
-                                        Attributes
-                                    </button>
+                                {/* Basic Information */}
+                                <div className="section-header">
+                                    🚗 Basic Information
                                 </div>
-                                
-                                {/* Basic Information Tab */}
-                                {activeTab === 'basic' && (
-                                    <div>
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">Category</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.category}
-                                                    onChange={(e) => setVehicleForm(prev => ({ 
-                                                        ...prev, 
-                                                        category: e.target.value,
-                                                        subcategory: '' // Reset subcategory when category changes
-                                                    }))}
-                                                >
-                                                    {Object.keys(vehicleCategories).map(cat => (
-                                                        <option key={cat} value={cat}>{cat}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Subcategory</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.subcategory}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, subcategory: e.target.value }))}
-                                                >
-                                                    <option value="">Select...</option>
-                                                    {vehicleCategories[vehicleForm.category]?.map(subcat => (
-                                                        <option key={subcat} value={subcat}>{subcat}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        
-
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">Brand</label>
-                                                <input 
-                                                    className="input-field input-small"
-                                                    placeholder="e.g. Volvo, Mercedes"
-                                                    value={vehicleForm.brand}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, brand: e.target.value }))}
-                                                />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Color</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.color}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, color: e.target.value }))}
-                                                >
-                                                    <option value="">Select color...</option>
-                                                    {colors.map(color => (
-                                                        <option key={color} value={color}>{color}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>                                        
-
-                                        
-                                        
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">View Pose</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.view_pose}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, view_pose: e.target.value }))}
-                                                >
-                                                    {viewPoses.map(pose => (
-                                                        <option key={pose} value={pose}>{pose.replace('_', ' ')}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Direction</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.direction}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, direction: e.target.value }))}
-                                                >
-                                                    {directions.map(dir => (
-                                                        <option key={dir} value={dir}>{dir.replace('_', ' ')}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">Operator/Company</label>
-                                                <input 
-                                                    className="input-field input-small"
-                                                    placeholder="e.g. DHL, FedEx"
-                                                    value={vehicleForm.operator}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, operator: e.target.value }))}
-                                                />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Seats</label>
-                                                <input 
-                                                    type="number"
-                                                    className="input-field input-small"
-                                                    min="1"
-                                                    value={vehicleForm.number_of_seats}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_seats: parseInt(e.target.value) }))}
-                                                />
-                                            </div>
-                                        </div>
-                                        
-
-                                        <div className="section-header" style={{ marginTop: '20px' }}>
-                                            🔢 License Plate Information
-                                        </div>
-
-                                        {/* Move checkboxes to the top */}
-                                        <div className="checkbox-grid">
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.license_plate_visible}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setVehicleForm(prev => ({ 
-                                                                ...prev, 
-                                                                license_plate_visible: true,
-                                                                license_plate_blurred: false // Uncheck blurred when visible is checked
-                                                            }));
-                                                        } else {
-                                                            setVehicleForm(prev => ({ 
-                                                                ...prev, 
-                                                                license_plate_visible: false,
-                                                                license_plate_text: '' // Clear text when not visible
-                                                            }));
-                                                        }
-                                                    }}
-                                                />
-                                                Visible
-                                            </label>
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.license_plate_blurred}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setVehicleForm(prev => ({ 
-                                                                ...prev, 
-                                                                license_plate_blurred: true,
-                                                                license_plate_visible: false, // Uncheck visible when blurred is checked
-                                                                license_plate_text: '' // Clear text when blurred
-                                                            }));
-                                                        } else {
-                                                            setVehicleForm(prev => ({ 
-                                                                ...prev, 
-                                                                license_plate_blurred: false
-                                                            }));
-                                                        }
-                                                    }}
-                                                />
-                                                Blurred
-                                            </label>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">License Plate Text</label>
-                                            <input 
-                                                className="input-field input-small"
-                                                placeholder={vehicleForm.license_plate_blurred ? "Text unavailable (blurred)" : vehicleForm.license_plate_visible ? "e.g. WXD1023" : "Not visible"}
-                                                value={vehicleForm.license_plate_text}
-                                                disabled={vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible} // Disable if blurred OR not visible
-                                                onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_text: e.target.value.toUpperCase() }))}
-                                                style={{
-                                                    backgroundColor: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                                    color: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                                }}
-                                            />
-                                        </div>
-
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">Plate Country</label>
-                                                <input 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.license_plate_country}
-                                                    disabled={!vehicleForm.license_plate_visible} // Disable if not visible
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_country: e.target.value }))}
-                                                    style={{
-                                                        backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                                        color: !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                                    }}
-                                                />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Plate Format</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.license_plate_format}
-                                                    disabled={!vehicleForm.license_plate_visible} // Disable if not visible
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_format: e.target.value }))}
-                                                    style={{
-                                                        backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                                        color: !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                                    }}
-                                                >
-                                                    <option value="License_Plate_Normal">License Plate Normal</option>
-                                                    <option value="License_Plate_Taxi">License Plate Taxi</option>
-                                                    <option value="Trailer_Plate">Trailer Plate</option>
-                                                    <option value="Diplomatic_Plate">Diplomatic Plate</option>
-                                                    <option value="Thai_Plate">Thai Plate</option>
-                                                    <option value="EV_Plate">EV Plate</option>                                                
-
-                                                </select>
-                                            </div>
-                                        </div>                                        
-
-
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Category</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.category}
+                                            onChange={(e) => setVehicleForm(prev => ({
+                                                ...prev,
+                                                category: e.target.value,
+                                                subcategory: ''
+                                            }))}
+                                        >
+                                            {Object.keys(vehicleCategories).map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
                                     </div>
-                                )}
-                                
-                                {/* Mechanical Tab */}
-                                {activeTab === 'mechanical' && (
-                                    <div>
-                                        <div className="section-header">
-                                            ⚙️ Mechanical Properties
-                                        </div>
-                                        
-                                        <div className="form-row">
-                                            <div className="form-group">
-                                                <label className="form-label">Visible Wheels</label>
-                                                <input 
-                                                    type="number"
-                                                    className="input-field input-small"
-                                                    min="0"
-                                                    value={vehicleForm.number_of_wheels_visible}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_wheels_visible: parseInt(e.target.value) }))}
-                                                />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Inferred Axles</label>
-                                                <input 
-                                                    type="number"
-                                                    className="input-field input-small"
-                                                    min="0"
-                                                    value={vehicleForm.number_of_axles_inferred}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_inferred: parseInt(e.target.value) }))}
-                                                />
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="form-group">
-                                            <label className="form-label">Raised Axles</label>
-                                            <input 
-                                                type="number"
-                                                className="input-field input-small"
-                                                min="0"
-                                                value={vehicleForm.number_of_axles_raised}
-                                                onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_raised: parseInt(e.target.value) }))}
-                                            />
-                                        </div>
-                                        
-                                        <div className="checkbox-grid">
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.truck_trailer_labels_visible}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, truck_trailer_labels_visible: e.target.checked }))}
-                                                />
-                                                Trailer Labels Visible
-                                            </label>
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.cargo_present}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, cargo_present: e.target.checked }))}
-                                                />
-                                                Cargo Present
-                                            </label>
-                                        </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Subcategory</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.subcategory}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, subcategory: e.target.value }))}
+                                        >
+                                            <option value="">Select...</option>
+                                            {vehicleCategories[vehicleForm.category]?.map(subcat => (
+                                                <option key={subcat} value={subcat}>{subcat}</option>
+                                            ))}
+                                        </select>
                                     </div>
-                                )}
-                                
-                                {/* Attributes Tab */}
-                                {activeTab === 'attributes' && (
-                                    <div>
-                                        <div className="section-header">
-                                            🏷️ Vehicle Attributes
-                                        </div>
-                                        
-                                        <div className="checkbox-grid">
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.is_taxi}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, is_taxi: e.target.checked }))}
-                                                />
-                                                🚕 Taxi
-                                            </label>
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.is_bus}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, is_bus: e.target.checked }))}
-                                                />
-                                                🚌 Bus
-                                            </label>
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.is_emergency_vehicle}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, is_emergency_vehicle: e.target.checked }))}
-                                                />
-                                                🚨 Emergency
-                                            </label>
-                                            <label className="checkbox-item">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={vehicleForm.is_electric}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, is_electric: e.target.checked }))}
-                                                />
-                                                ⚡ Electric
-                                            </label>
-                                        </div>
-                                        
-                                        {vehicleForm.is_bus && (
-                                            <div className="form-group">
-                                                <label className="form-label">Bus Type</label>
-                                                <select 
-                                                    className="input-field input-small"
-                                                    value={vehicleForm.bus_type}
-                                                    onChange={(e) => setVehicleForm(prev => ({ ...prev, bus_type: e.target.value }))}
-                                                >
-                                                    <option value="">Select bus type...</option>
-                                                    <option value="city">City Bus</option>
-                                                    <option value="school">School Bus</option>
-                                                    <option value="tour">Tour Bus</option>
-                                                    <option value="double_decker">Double Decker</option>
-                                                    <option value="shuttle">Shuttle</option>
-                                                </select>
-                                            </div>
-                                        )}
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Brand</label>
+                                        <input
+                                            className="input-field input-small"
+                                            placeholder="e.g. Volvo, Mercedes"
+                                            value={vehicleForm.brand}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, brand: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Color</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.color}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, color: e.target.value }))}
+                                        >
+                                            <option value="">Select color...</option>
+                                            {colors.map(color => (
+                                                <option key={color} value={color}>{color}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">View Pose</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.view_pose}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, view_pose: e.target.value }))}
+                                        >
+                                            {viewPoses.map(pose => (
+                                                <option key={pose} value={pose}>{pose.replace('_', ' ')}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Direction</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.direction}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, direction: e.target.value }))}
+                                        >
+                                            {directions.map(dir => (
+                                                <option key={dir} value={dir}>{dir.replace('_', ' ')}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Operator/Company</label>
+                                        <input
+                                            className="input-field input-small"
+                                            placeholder="e.g. DHL, FedEx"
+                                            value={vehicleForm.operator}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, operator: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Seats</label>
+                                        <input
+                                            type="number"
+                                            className="input-field input-small"
+                                            min="1"
+                                            value={vehicleForm.number_of_seats}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_seats: parseInt(e.target.value) }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* License Plate Information */}
+                                <div className="section-header" style={{ marginTop: '20px' }}>
+                                    🔢 License Plate Information
+                                </div>
+
+                                <div className="checkbox-grid">
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.license_plate_visible}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plate_visible: true,
+                                                        license_plate_blurred: false
+                                                    }));
+                                                } else {
+                                                    setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plate_visible: false,
+                                                        license_plate_text: ''
+                                                    }));
+                                                }
+                                            }}
+                                        />
+                                        Visible
+                                    </label>
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.license_plate_blurred}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plate_blurred: true,
+                                                        license_plate_visible: false,
+                                                        license_plate_text: ''
+                                                    }));
+                                                } else {
+                                                    setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plate_blurred: false
+                                                    }));
+                                                }
+                                            }}
+                                        />
+                                        Blurred
+                                    </label>
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">License Plate Text</label>
+                                    <input
+                                        className="input-field input-small"
+                                        placeholder={vehicleForm.license_plate_blurred ? "Text unavailable (blurred)" : vehicleForm.license_plate_visible ? "e.g. WXD1023" : "Not visible"}
+                                        value={vehicleForm.license_plate_text}
+                                        disabled={vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible}
+                                        onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_text: e.target.value.toUpperCase() }))}
+                                        style={{
+                                            backgroundColor: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
+                                            color: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#999' : 'black'
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Plate Country</label>
+                                        <input
+                                            className="input-field input-small"
+                                            value={vehicleForm.license_plate_country}
+                                            disabled={!vehicleForm.license_plate_visible}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_country: e.target.value }))}
+                                            style={{
+                                                backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
+                                                color: !vehicleForm.license_plate_visible ? '#999' : 'black'
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Plate Format</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.license_plate_format}
+                                            disabled={!vehicleForm.license_plate_visible}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_format: e.target.value }))}
+                                            style={{
+                                                backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
+                                                color: !vehicleForm.license_plate_visible ? '#999' : 'black'
+                                            }}
+                                        >
+                                            <option value="License_Plate_Normal">License Plate Normal</option>
+                                            <option value="License_Plate_Taxi">License Plate Taxi</option>
+                                            <option value="Trailer_Plate">Trailer Plate</option>
+                                            <option value="Diplomatic_Plate">Diplomatic Plate</option>
+                                            <option value="Thai_Plate">Thai Plate</option>
+                                            <option value="EV_Plate">EV Plate</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Mechanical Properties */}
+                                <div className="section-header">
+                                    ⚙️ Mechanical Properties
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Visible Wheels</label>
+                                        <input
+                                            type="number"
+                                            className="input-field input-small"
+                                            min="0"
+                                            value={vehicleForm.number_of_wheels_visible}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_wheels_visible: parseInt(e.target.value) }))}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Inferred Axles</label>
+                                        <input
+                                            type="number"
+                                            className="input-field input-small"
+                                            min="0"
+                                            value={vehicleForm.number_of_axles_inferred}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_inferred: parseInt(e.target.value) }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Raised Axles</label>
+                                    <input
+                                        type="number"
+                                        className="input-field input-small"
+                                        min="0"
+                                        value={vehicleForm.number_of_axles_raised}
+                                        onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_raised: parseInt(e.target.value) }))}
+                                    />
+                                </div>
+
+                                <div className="checkbox-grid">
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.truck_trailer_labels_visible}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, truck_trailer_labels_visible: e.target.checked }))}
+                                        />
+                                        Trailer Labels Visible
+                                    </label>
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.cargo_present}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, cargo_present: e.target.checked }))}
+                                        />
+                                        Cargo Present
+                                    </label>
+                                </div>
+
+                                {/* Vehicle Attributes */}
+                                <div className="section-header">
+                                    🏷️ Vehicle Attributes
+                                </div>
+
+                                <div className="checkbox-grid">
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.is_taxi}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, is_taxi: e.target.checked }))}
+                                        />
+                                        🚕 Taxi
+                                    </label>
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.is_bus}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, is_bus: e.target.checked }))}
+                                        />
+                                        🚌 Bus
+                                    </label>
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.is_emergency_vehicle}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, is_emergency_vehicle: e.target.checked }))}
+                                        />
+                                        🚨 Emergency
+                                    </label>
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={vehicleForm.is_electric}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, is_electric: e.target.checked }))}
+                                        />
+                                        ⚡ Electric
+                                    </label>
+                                </div>
+
+                                {vehicleForm.is_bus && (
+                                    <div className="form-group">
+                                        <label className="form-label">Bus Type</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.bus_type}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, bus_type: e.target.value }))}
+                                        >
+                                            <option value="">Select bus type...</option>
+                                            <option value="city">City Bus</option>
+                                            <option value="school">School Bus</option>
+                                            <option value="tour">Tour Bus</option>
+                                            <option value="double_decker">Double Decker</option>
+                                            <option value="shuttle">Shuttle</option>
+                                        </select>
                                     </div>
                                 )}
                                 
