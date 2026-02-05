@@ -503,10 +503,8 @@
             
             // Add new state: image map, label map, and index
 			const [imageFiles, setImageFiles] = React.useState([]);        // array<File>
-			const [labelFiles, setLabelFiles] = React.useState([]);        // array<File>
 
 			const [imageByBase, setImageByBase] = React.useState({});      // { baseName: File }
-			const [labelByBase, setLabelByBase] = React.useState({});      // { baseName: parsedJson }
 			
 			// YOLO TXT labels
 			const [yoloFiles, setYoloFiles] = React.useState([]);          // array<File>
@@ -718,15 +716,12 @@
 			// ------------------------------
 			// Dataset index helpers (Images + Labels)
 			// ------------------------------
-			const rebuildDatasetIndex = ({ nextImageByBase, nextLabelByBase, nextYoloByBase } = {}) => {
+			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-
-				const jsonLabels = nextLabelByBase ?? labelByBase;   // JSON labels
 				const yoloLabels = nextYoloByBase ?? yoloByBase;     // YOLO txt labels
 
 				const bases = new Set([
 					...Object.keys(imgs),
-					...Object.keys(jsonLabels),
 					...Object.keys(yoloLabels),
 				]);
 
@@ -734,26 +729,21 @@
 					.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
 					.map((b) => {
 						const img = imgs[b] || null;
-						const jsonLab = jsonLabels[b] || null;
 						const yoloLab = yoloLabels[b] || null;
 
-						const hasJson = !!jsonLab;
 						const hasYolo = !!yoloLab;
 
 						let status = "image_only";
-						if (!img && (hasJson || hasYolo)) status = "label_only";
-						else if (img && hasJson) status = "paired_json";
-						else if (img && !hasJson && hasYolo) status = "paired_yolo";
+						if (!img && hasYolo) status = "label_only";
+						else if (img && hasYolo) status = "paired_yolo";
 
 						return {
 							base: b,
 							hasImage: !!img,
 
-							hasJson,
 							hasYolo,
 
 							imageName: img?.name ?? "",
-							jsonLabelName: hasJson ? (jsonLab.__labelFileName ?? `${b}.json`) : "",
 							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`) : "",
 
 							status,
@@ -790,9 +780,8 @@
 			};
 
 
-			const pickFirstOpenableBase = ({ nextImageByBase, nextLabelByBase } = {}) => {
+			const pickFirstOpenableBase = ({ nextImageByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-				const labels = nextLabelByBase ?? labelByBase;
 
 				const imgBases = Object.keys(imgs).sort((a, b) =>
 					a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -800,13 +789,12 @@
 				if (imgBases.length === 0) return null;
 
 				// Prefer first image that has no label yet
-				const firstUnlabelled = imgBases.find((b) => imgs[b] && !labelByBase[b] && !yoloByBase[b]);
+				const firstUnlabelled = imgBases.find((b) => imgs[b] && !yoloByBase[b]);
 				return firstUnlabelled ?? imgBases[0];
 			};
 
-			const openByBase = (base, { nextImageByBase, nextLabelByBase, nextYoloByBase } = {}) => {
+			const openByBase = (base, { nextImageByBase, nextYoloByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-				const jsonLabels = nextLabelByBase ?? labelByBase;
 				const yoloLabels = nextYoloByBase ?? yoloByBase;
 
 				const imgFile = imgs[base];
@@ -817,13 +805,7 @@
 
 				setCurrentBase(base);
 
-				const jsonLab = jsonLabels[base] || null;
 				const yoloLab = yoloLabels[base] || null;
-
-				if (jsonLab) {
-					loadImageWithAnnotations(imgFile, jsonLab);
-					return;
-				}
 
 				if (yoloLab) {
 					loadImageWithYolo(imgFile, yoloLab);
@@ -1022,122 +1004,6 @@
                 }
             };
 
-            const handleJsonFileSelect = async (e) => {
-                const file = e.target.files[0];
-                if (!file || !file.name.endsWith('.json')) {
-                    alert('Please select a valid JSON file!');
-                    return;
-                }
-                
-                try {
-                    const text = await file.text();
-                    const jsonData = JSON.parse(text);
-                    
-                    // Validate JSON structure
-                    if (!jsonData.image || !jsonData.objects) {
-                        alert('Invalid annotation JSON format!');
-                        return;
-                    }
-                    
-                    const imageName = jsonData.image.filename;
-                    if (!imageName) {
-                        alert('No image filename found in JSON!');
-                        return;
-                    }
-                    
-                    // Try to auto-find the image file in the same directory
-                    const directory = file.webkitRelativePath ? file.webkitRelativePath.split('/').slice(0, -1).join('/') : '';
-                    
-                    // Create file input to select from the same directory
-                    const imageInput = document.createElement('input');
-                    imageInput.type = 'file';
-                    imageInput.accept = 'image/*';
-                    
-                    // Try to find matching image extensions
-                    const baseImageName = imageName.split('.')[0];
-                    const commonExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
-                    
-                    imageInput.onchange = (event) => {
-                        const imageFile = event.target.files[0];
-                        if (imageFile) {
-                            const imageBaseName = imageFile.name.split('.')[0];
-                            
-                            // Check if it's a reasonable match
-                            if (imageBaseName.toLowerCase() !== baseImageName.toLowerCase()) {
-                                const proceed = confirm(
-                                    `JSON expects image "${imageName}" but you selected "${imageFile.name}". Continue anyway?`
-                                );
-                                if (!proceed) return;
-                            }
-                            
-                            // Load the image and restore annotations
-                            loadImageWithAnnotations(imageFile, jsonData);
-                        }
-                    };
-                    
-                    // Show a helpful message and trigger file selection
-                    alert(`JSON loaded! Now please select the image file "${imageName}" from the same folder.`);
-                    imageInput.click();
-                    
-                } catch (error) {
-                    alert('Error reading JSON file: ' + error.message);
-                }
-            };
-            
-            // Implement the label folder handler (parse JSONs into a map)
-            const handleLabelDirectorySelect = async (e) => {
-              const files = e.target.files;
-              if (!files || files.length === 0) return;
-            
-              const jsonFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
-              if (jsonFiles.length === 0) {
-                alert("No JSON files found in the selected labels folder!");
-                return;
-              }
-            
-              setLabelFiles(jsonFiles);
-            
-              // Parse JSON files -> labelByBase
-              const parsedPairs = await Promise.all(
-                jsonFiles.map(async (f) => {
-                  try {
-                    const text = await f.text();
-                    const data = JSON.parse(text);
-            
-                    // Optional: validate expected structure (you already do this in single JSON loader)
-                    if (!data.image || !data.objects) {
-                      console.warn("Skipping invalid JSON:", f.name);
-                      return null;
-                    }
-            
-                    const bFromJson = data?.image?.filename ? baseName(data.image.filename) : null;
-					const bFromFile = baseName(f.name);
-					const b = bFromJson || bFromFile;
-
-					// Keep label filename for display/debug
-					data.__labelFileName = f.name;
-
-					return [b, data];
-
-                  } catch (err) {
-                    console.warn("Failed parsing:", f.name, err);
-                    return null;
-                  }
-                })
-              );
-            
-              const next = {};
-              for (const pair of parsedPairs) {
-                if (!pair) continue;
-                const [b, data] = pair;
-                next[b] = data;
-              }
-            
-              setLabelByBase(next);
-            
-              // Rebuild index using whatever images are currently loaded too
-              rebuildDatasetIndex({ nextLabelByBase: next });
-            };
 			
 			const handleYoloDirectorySelect = async (e) => {
 			  const files = e.target.files;
@@ -1175,66 +1041,6 @@
 			  rebuildDatasetIndex({ nextYoloByBase: next });
 			};
 
-            // Helper function to load image with annotations
-            const loadImageWithAnnotations = (imageFile, jsonData) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        setImage(imageFile);
-                        setImagePreview(e.target.result);
-                        
-                        // Restore all annotation data
-                        setAnnotations({
-                            image: {
-                                filename: imageFile.name,
-                                width: img.width,
-                                height: img.height,
-                                timestamp: jsonData.image.timestamp || new Date().toISOString()
-                            },
-                            objects: jsonData.objects || []
-                        });
-                        
-                        // Restore vehicle form if there's a vehicle annotation
-                        const firstVehicle = jsonData.objects?.find(obj => obj.type === 'vehicle');
-                        if (firstVehicle) {
-                            setVehicleForm({
-                                category: firstVehicle.vehicle_info?.category || 'Car',
-                                subcategory: firstVehicle.vehicle_info?.subcategory || '',
-                                country: firstVehicle.vehicle_info?.country || 'MY',
-                                brand: firstVehicle.vehicle_info?.brand || '',
-                                model: firstVehicle.vehicle_info?.model || '',
-                                color: firstVehicle.vehicle_info?.color || '',
-                                operator: firstVehicle.vehicle_info?.operator || '',
-                                number_of_seats: firstVehicle.vehicle_info?.number_of_seats || 4,
-                                view_pose: firstVehicle.view_pose || 'rear',
-                                direction: firstVehicle.direction || 'northbound',
-                                number_of_wheels_visible: firstVehicle.mechanical?.number_of_wheels_visible || 4,
-                                number_of_axles_inferred: firstVehicle.mechanical?.number_of_axles_inferred || 2,
-                                number_of_axles_raised: firstVehicle.mechanical?.number_of_axles_raised || 0,
-                                truck_trailer_labels_visible: firstVehicle.mechanical?.truck_trailer_labels_visible || false,
-                                cargo_present: firstVehicle.mechanical?.cargo_present || false,
-                                is_taxi: firstVehicle.attributes?.is_taxi || false,
-                                is_bus: firstVehicle.attributes?.is_bus || false,
-                                bus_type: firstVehicle.attributes?.bus_type || '',
-                                is_emergency_vehicle: firstVehicle.attributes?.is_emergency_vehicle || false,
-                                is_electric: firstVehicle.attributes?.is_electric || false,
-                                license_plate_text: firstVehicle.license_plate?.text || '',
-                                license_plate_country: firstVehicle.license_plate?.country || 'MY',
-                                license_plate_format: firstVehicle.license_plate?.format || 'License_Plate_Normal',
-                                license_plate_blurred: firstVehicle.license_plate?.blurred || false,
-                                license_plate_visible: firstVehicle.license_plate?.visible !== false,
-                                // ✅ FIX THIS LINE - ENSURE CoT LOADS PROPERLY:
-                                chainOfThought: Array.isArray(firstVehicle.CoT) ? firstVehicle.CoT : []
-                            });
-                        }
-                        
-                        alert(`Successfully loaded ${jsonData.objects?.length || 0} annotations! You can now modify bounding boxes, CoT, and all properties.`);
-                    };
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(imageFile);
-            };
 			
 			const parseYoloTxtToObjects = (txt, imgW, imgH) => {
 			  const lines = (txt || "")
@@ -2570,19 +2376,6 @@
                                     />
                                 </div>
 
-                                {/* JSON with Auto Image Detection - Compact */}
-                                <div style={{ marginBottom: '8px', padding: '8px', background: '#fff3cd', borderRadius: '6px', border: '1px solid #ffd60a' }}>
-                                    <div style={{ fontSize: '10px', color: '#8b5a2b', marginBottom: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        📄 JSON + Auto Image
-                                    </div>
-                                    <input 
-                                        type="file" 
-                                        accept=".json"
-                                        onChange={handleJsonFileSelect}
-                                        className="input-field"
-                                        style={{ padding: '6px 8px', fontSize: '11px' }}
-                                    />
-                                </div>
 
                                 {/* Directory Upload - Compact */}
                                 <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #0ea5e9' }}>
@@ -2620,41 +2413,6 @@
                                     </div>
                                 </div>
                                 
-                                {/* Labels Folder Upload */}
-                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #8b5cf6' }}>
-                                    <div style={{ fontSize: '10px', color: '#4c1d95', marginBottom: '4px', fontWeight: 'bold' }}>
-                                        🏷️ Labels Folder (JSON)
-                                    </div>
-                                
-                                    <div style={{ position: 'relative' }}>
-                                        <input
-                                            type="file"
-                                            webkitdirectory="true"
-                                            directory="true"
-                                            multiple
-                                            accept=".json,application/json"
-                                            onChange={handleLabelDirectorySelect}
-                                            style={{ opacity: 0, position: 'absolute', zIndex: -1 }}
-                                            id="label-directory-input"
-                                            />
-                                        <label
-                                            htmlFor="label-directory-input"
-                                            className="input-field"
-                                            style={{
-                                                display: 'block',
-                                                cursor: 'pointer',
-                                                textAlign: 'center',
-                                                backgroundColor: 'white',
-                                                border: '2px dashed #8b5cf6',
-                                                color: '#4c1d95',
-                                                padding: '6px 8px',
-                                                fontSize: '11px'
-                                            }}
-                                        >
-                                            {labelFiles.length > 0 ? `🏷️ ${labelFiles.length} JSONs` : '🏷️ Choose Labels Folder'}
-                                        </label>
-                                    </div>
-                                </div>
 								
 								{/* YOLO Labels Folder Upload */}
 								<div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #06b6d4' }}>
@@ -2719,9 +2477,7 @@
 
 									<div style={{ fontSize: '10px', color: '#374151', marginBottom: '8px' }}>
 										Images: <b>{Object.keys(imageByBase).length}</b>
-										{" | "}JSON: <b>{Object.keys(labelByBase).length}</b>
 										{" | "}YOLO: <b>{Object.keys(yoloByBase).length}</b>
-										{" | "}Paired(JSON): <b>{datasetIndex.filter(r => r.status === 'paired_json').length}</b>
 										{" | "}Paired(YOLO): <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
 
 									</div>
@@ -2744,13 +2500,12 @@
 													}}
 												>
 													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-														{row.status === 'paired_json' ? '✅J' : row.status === 'paired_yolo' ? '✅Y' : '🟡'}
+														{row.status === 'paired_yolo' ? '✅Y' : '🟡'}
 													</div>
 													<div style={{ fontSize: '10px', color: '#6b7280' }}>
 														{row.imageName}
-														{row.hasJson ? ` • ${row.jsonLabelName}` : ''}
 														{row.hasYolo ? ` • ${row.yoloLabelName}` : ''}
-														{(!row.hasJson && !row.hasYolo) ? ' • (no label)' : ''}
+														{!row.hasYolo ? ' • (no label)' : ''}
 
 													</div>
 												</div>
@@ -4729,7 +4484,6 @@
     </script>
 </body>
 </html>
-
 
 
 
