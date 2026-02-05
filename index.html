@@ -2356,7 +2356,7 @@
 							<div className="scrollable-panel">
 
                             <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                📁 Image & JSON Upload
+                                📁 Image Upload
                             </h2>
 
                             {/* Compact Upload Section */}
@@ -4082,33 +4082,6 @@
                                         </div>
                                     </div>
                                 )}
-                                {/* Keyboard Shortcuts Help */}
-                                <div style={{ marginTop: '20px' }}>
-                                    <div className="section-header">
-                                        ⌨️ Keyboard Shortcuts
-                                    </div>
-                                    <div style={{ 
-                                        background: '#f8f9fa', 
-                                        border: '1px solid #e9ecef', 
-                                        borderRadius: '8px',
-                                        padding: '12px',
-                                        fontSize: '11px'
-                                    }}>
-                                        <div style={{ marginBottom: '4px' }}><strong>Ctrl+Z:</strong> Undo last action</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>Ctrl+Y:</strong> Redo action</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>Delete/Backspace:</strong> Remove selected annotation</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>1,2,3,4,5:</strong> Change selected annotation type</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>S:</strong> Select save directory</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>Ctrl+S:</strong> Save JSON + Annotated Image</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>W:</strong> Toggle drawing mode</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>F:</strong> Enter fullscreen mode</div>
-                                        <div><strong>Escape:</strong> Exit fullscreen, cancel drawing, or deselect</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>Ctrl+Shift+S:</strong> Save all annotated images</div>
-                                        <div style={{ marginBottom: '4px' }}><strong>← →:</strong> Navigate images (in fullscreen)</div>
-
-                                    </div>
-                                   
-                                </div>  
                                                               
                             </div>
                         </div>
@@ -4474,8 +4447,49 @@
                                     )}
                                 </div>
                             </div>
-                        )}                        
+                        )}
                     </div>
+
+                    {/* Keyboard Shortcuts - Centered below main canvas */}
+                    <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '0 24px 24px 24px' }}>
+                        <div style={{
+                            maxWidth: '800px',
+                            margin: '0 auto',
+                            background: 'white',
+                            borderRadius: '16px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            padding: '16px 24px'
+                        }}>
+                            <div style={{
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                marginBottom: '12px',
+                                textAlign: 'center',
+                                color: '#374151'
+                            }}>
+                                ⌨️ Keyboard Shortcuts
+                            </div>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr 1fr',
+                                gap: '6px 24px',
+                                fontSize: '11px'
+                            }}>
+                                <div><strong>Ctrl+Z:</strong> Undo last action</div>
+                                <div><strong>Ctrl+Y:</strong> Redo action</div>
+                                <div><strong>Delete/Backspace:</strong> Remove selected annotation</div>
+                                <div><strong>1,2,3,4,5:</strong> Change annotation type</div>
+                                <div><strong>S:</strong> Select save directory</div>
+                                <div><strong>Ctrl+S:</strong> Save JSON + Annotated Image</div>
+                                <div><strong>W:</strong> Toggle drawing mode</div>
+                                <div><strong>F:</strong> Enter fullscreen mode</div>
+                                <div><strong>Escape:</strong> Exit fullscreen / cancel / deselect</div>
+                                <div><strong>Ctrl+Shift+S:</strong> Save all annotated images</div>
+                                <div><strong>← →:</strong> Navigate images (in fullscreen)</div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             );
         };
