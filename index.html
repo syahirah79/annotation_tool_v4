@@ -475,12 +475,8 @@
                 brand: '',
                 model: '',
                 color: '',
-                operator: '',
-                number_of_seats: 4,
-                view_pose: 'rear',
-                direction: 'northbound',
+                direction: 'Northbound',
                 // Mechanical
-                number_of_wheels_visible: 4,
                 number_of_axles_inferred: 2,
                 number_of_axles_raised: 0,
                 truck_trailer_labels_visible: false,
@@ -541,8 +537,7 @@
                 'Container': ['20ft Container', '40ft Container', 'Refrigerated Container', 'Open Top Container', 'Tank Container', 'Other'],
             };
             
-            const directions = ['northbound', 'southbound', 'eastbound', 'westbound', 'towards_camera', 'away_from_camera', 'left_to_right', 'right_to_left', 'unknown'];
-            const viewPoses = ['front', 'rear', 'side_left', 'side_right', 'front_left', 'front_right', 'rear_left', 'rear_right'];
+            const directions = ['Northbound', 'Southbound', 'Eastbound', 'Westbound'];
             const colors = ['White', 'Black', 'Silver', 'Gray', 'Red', 'Blue', 'Green', 'Yellow', 'Brown', 'Orange', 'Purple', 'Gold', 'Maroon', 'Other'];
             
             const annotationTypes = [
@@ -648,11 +643,7 @@
                                 brand: '',
                                 model: '',
                                 color: '',
-                                operator: '',
-                                number_of_seats: 4,
-                                view_pose: 'rear',
-                                direction: 'northbound',
-                                number_of_wheels_visible: 4,
+                                direction: 'Northbound',
                                 number_of_axles_inferred: 2,
                                 number_of_axles_raised: 0,
                                 truck_trailer_labels_visible: false,
@@ -1301,7 +1292,6 @@
                 if (annotationType === 'vehicle') {
                     return {
                         ...baseAnnotation,
-                        view_pose: vehicleForm.view_pose,
                         direction: vehicleForm.direction,
                         vehicle_info: {
                             category: vehicleForm.category,
@@ -1309,12 +1299,9 @@
                             country: vehicleForm.country,
                             brand: vehicleForm.brand,
                             model: vehicleForm.model,
-                            color: vehicleForm.color,
-                            operator: vehicleForm.operator,
-                            number_of_seats: vehicleForm.number_of_seats
+                            color: vehicleForm.color
                         },
                         mechanical: {
-                            number_of_wheels_visible: vehicleForm.number_of_wheels_visible,
                             number_of_axles_inferred: vehicleForm.number_of_axles_inferred,
                             number_of_axles_raised: vehicleForm.number_of_axles_raised,
                             truck_trailer_labels_visible: vehicleForm.truck_trailer_labels_visible,
@@ -1386,7 +1373,6 @@
                         if (obj.id === selectedAnnotation) {
                             return {
                                 ...obj,
-                                view_pose: vehicleForm.view_pose,
                                 direction: vehicleForm.direction,
                                 vehicle_info: {
                                     // ✅ ENSURE THE OBJECT EXISTS FIRST:
@@ -1394,14 +1380,11 @@
                                     category: vehicleForm.category,
                                     subcategory: vehicleForm.subcategory,
                                     brand: vehicleForm.brand,
-                                    color: vehicleForm.color,
-                                    operator: vehicleForm.operator,
-                                    number_of_seats: vehicleForm.number_of_seats
+                                    color: vehicleForm.color
                                 },
                                 mechanical: {
                                     // ✅ ENSURE THE OBJECT EXISTS FIRST:
                                     ...(obj.mechanical || {}),
-                                    number_of_wheels_visible: vehicleForm.number_of_wheels_visible,
                                     number_of_axles_inferred: vehicleForm.number_of_axles_inferred,
                                     number_of_axles_raised: vehicleForm.number_of_axles_raised,
                                     truck_trailer_labels_visible: vehicleForm.truck_trailer_labels_visible,
@@ -2380,7 +2363,7 @@
                                 {/* Directory Upload - Compact */}
                                 <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #0ea5e9' }}>
                                     <div style={{ fontSize: '10px', color: '#0c4a6e', marginBottom: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        📁 Image Folder
+                                        📁 Folder/Directory
                                     </div>
                                     <div style={{ position: 'relative' }}>
                                         <input 
@@ -2408,7 +2391,7 @@
                                                 fontSize: '11px'
                                             }}
                                         >
-                                            {imageDirectory.length > 0 ? `📁 ${imageDirectory.length} images` : '📁 Choose Image Folder'}
+                                            {imageDirectory.length > 0 ? `📁 ${imageDirectory.length} images` : '📁 Choose Folder'}
                                         </label>
                                     </div>
                                 </div>
@@ -2763,11 +2746,7 @@
                                                             brand: obj.vehicle_info?.brand || '',
                                                             model: obj.vehicle_info?.model || '',
                                                             color: obj.vehicle_info?.color || '',
-                                                            operator: obj.vehicle_info?.operator || '',
-                                                            number_of_seats: obj.vehicle_info?.number_of_seats || 4,
-                                                            view_pose: obj.view_pose || 'rear',
-                                                            direction: obj.direction || 'northbound',
-                                                            number_of_wheels_visible: obj.mechanical?.number_of_wheels_visible || 4,
+                                                            direction: obj.direction || 'Northbound',
                                                             number_of_axles_inferred: obj.mechanical?.number_of_axles_inferred || 2,
                                                             number_of_axles_raised: obj.mechanical?.number_of_axles_raised || 0,
                                                             truck_trailer_labels_visible: obj.mechanical?.truck_trailer_labels_visible || false,
@@ -3497,18 +3476,6 @@
 
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">View Pose</label>
-                                        <select
-                                            className="input-field input-small"
-                                            value={vehicleForm.view_pose}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, view_pose: e.target.value }))}
-                                        >
-                                            {viewPoses.map(pose => (
-                                                <option key={pose} value={pose}>{pose.replace('_', ' ')}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
                                         <label className="form-label">Direction</label>
                                         <select
                                             className="input-field input-small"
@@ -3522,27 +3489,6 @@
                                     </div>
                                 </div>
 
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Operator/Company</label>
-                                        <input
-                                            className="input-field input-small"
-                                            placeholder="e.g. DHL, FedEx"
-                                            value={vehicleForm.operator}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, operator: e.target.value }))}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Seats</label>
-                                        <input
-                                            type="number"
-                                            className="input-field input-small"
-                                            min="1"
-                                            value={vehicleForm.number_of_seats}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_seats: parseInt(e.target.value) }))}
-                                        />
-                                    </div>
-                                </div>
 
                                 {/* License Plate Information */}
                                 <div className="section-header" style={{ marginTop: '20px' }}>
@@ -3653,16 +3599,6 @@
                                 </div>
 
                                 <div className="form-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Visible Wheels</label>
-                                        <input
-                                            type="number"
-                                            className="input-field input-small"
-                                            min="0"
-                                            value={vehicleForm.number_of_wheels_visible}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_wheels_visible: parseInt(e.target.value) }))}
-                                        />
-                                    </div>
                                     <div className="form-group">
                                         <label className="form-label">Inferred Axles</label>
                                         <input
@@ -3796,11 +3732,7 @@
                                                 brand: '',
                                                 model: '',
                                                 color: '',
-                                                operator: '',
-                                                number_of_seats: 4,
-                                                view_pose: 'rear',
-                                                direction: 'northbound',
-                                                number_of_wheels_visible: 4,
+                                                direction: 'Northbound',
                                                 number_of_axles_inferred: 2,
                                                 number_of_axles_raised: 0,
                                                 truck_trailer_labels_visible: false,
@@ -3858,7 +3790,6 @@
                                                 ...prev,
                                                 category: 'Heavy Vehicle',
                                                 subcategory: 'Prime Mover',
-                                                number_of_wheels_visible: 10,
                                                 number_of_axles_inferred: 5,
                                                 truck_trailer_labels_visible: true,
                                                 cargo_present: true
@@ -3878,7 +3809,6 @@
                                                 subcategory: 'City Bus',
                                                 is_bus: true,
                                                 bus_type: 'city',
-                                                number_of_wheels_visible: 6,
                                                 number_of_axles_inferred: 3
                                             }));
                                         }}
@@ -4451,7 +4381,6 @@
     </script>
 </body>
 </html>
-
 
 
 
