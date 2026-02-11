@@ -466,6 +466,13 @@
                 objects: []
             });
             
+            // Image properties form data
+            const [imagePropertiesForm, setImagePropertiesForm] = React.useState({
+                site_location: 'Toll',
+                scene: 'day',
+                camera_position: 'front'
+            });
+
             // Current annotation form data
             const [vehicleForm, setVehicleForm] = React.useState({
                 category: 'Car',
@@ -475,7 +482,7 @@
                 brand: '',
                 model: '',
                 color: '',
-                direction: 'Northbound',
+                direction: 'northbound',
                 // Mechanical
                 number_of_axles_inferred: 2,
                 number_of_axles_raised: 0,
@@ -537,7 +544,7 @@
                 'Container': ['20ft Container', '40ft Container', 'Refrigerated Container', 'Open Top Container', 'Tank Container', 'Other'],
             };
             
-            const directions = ['Northbound', 'Southbound', 'Eastbound', 'Westbound'];
+            const directions = ['northbound', 'southbound', 'eastbound', 'westbound', 'towards_camera', 'away_from_camera', 'left_to_right', 'right_to_left', 'unknown'];
             const colors = ['White', 'Black', 'Silver', 'Gray', 'Red', 'Blue', 'Green', 'Yellow', 'Brown', 'Orange', 'Purple', 'Gold', 'Maroon', 'Other'];
             
             const annotationTypes = [
@@ -622,6 +629,9 @@
                             // Restore saved annotations
                             setAnnotations(savedData.annotations);
                             setVehicleForm(savedData.vehicleForm);
+                            if (savedData.imagePropertiesForm) {
+                                setImagePropertiesForm(savedData.imagePropertiesForm);
+                            }
                             console.log(`📂 Restored ${savedData.annotations.objects.length} annotations for ${file.name}`);
                             // alert(`📂 Restored ${savedData.annotations.objects.length} saved annotations!`); // Removed popup
                         } else {
@@ -643,7 +653,7 @@
                                 brand: '',
                                 model: '',
                                 color: '',
-                                direction: 'Northbound',
+                                direction: 'northbound',
                                 number_of_axles_inferred: 2,
                                 number_of_axles_raised: 0,
                                 truck_trailer_labels_visible: false,
@@ -684,7 +694,8 @@
                         ...prev,
                         [currentFilename]: {
                             annotations: JSON.parse(JSON.stringify(annotations)),
-                            vehicleForm: JSON.parse(JSON.stringify(vehicleForm))
+                            vehicleForm: JSON.parse(JSON.stringify(vehicleForm)),
+                            imagePropertiesForm: JSON.parse(JSON.stringify(imagePropertiesForm))
                         }
                     }));
                     console.log(`💾 Saved ${annotations.objects.length} annotations for ${currentFilename}`);
@@ -1648,6 +1659,10 @@
                                     
                                     const jsonData = {
                                         ...imageData.annotations,
+                                        image: {
+                                            ...imageData.annotations.image,
+                                            ...(imageData.imagePropertiesForm || {})
+                                        },
                                         export_info: {
                                             tool: "Advanced Vehicle Dataset Annotation Tool",
                                             version: "2.0",
@@ -1713,6 +1728,12 @@
             const exportAnnotations = () => {
                 const exportData = {
                     ...annotations,
+                    image: {
+                        ...annotations.image,
+                        site_location: imagePropertiesForm.site_location,
+                        scene: imagePropertiesForm.scene,
+                        camera_position: imagePropertiesForm.camera_position
+                    },
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
                         version: "2.0",
@@ -1742,6 +1763,12 @@
                 // Save JSON data
                 const currentImageData = {
                     ...annotations,
+                    image: {
+                        ...annotations.image,
+                        site_location: imagePropertiesForm.site_location,
+                        scene: imagePropertiesForm.scene,
+                        camera_position: imagePropertiesForm.camera_position
+                    },
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
                         version: "2.0",
@@ -2746,7 +2773,7 @@
                                                             brand: obj.vehicle_info?.brand || '',
                                                             model: obj.vehicle_info?.model || '',
                                                             color: obj.vehicle_info?.color || '',
-                                                            direction: obj.direction || 'Northbound',
+                                                            direction: obj.direction || 'northbound',
                                                             number_of_axles_inferred: obj.mechanical?.number_of_axles_inferred || 2,
                                                             number_of_axles_raised: obj.mechanical?.number_of_axles_raised || 0,
                                                             truck_trailer_labels_visible: obj.mechanical?.truck_trailer_labels_visible || false,
@@ -2869,6 +2896,10 @@
                                                         // Save JSON
                                                         const jsonData = {
                                                             ...imageData.annotations,
+                                                            image: {
+                                                                ...imageData.annotations.image,
+                                                                ...(imageData.imagePropertiesForm || {})
+                                                            },
                                                             export_info: {
                                                                 tool: "Advanced Vehicle Dataset Annotation Tool",
                                                                 version: "2.0",
@@ -3404,9 +3435,57 @@
                         </div>
 
 
-                        {/* Right Panel - Vehicle Information Forms */}
+                        {/* Right Panel - Image & Vehicle Information Forms */}
                         <div className="card" style={{ padding: '24px' }}>
                             <div className="scrollable-panel">
+                                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    🖼️ Image Properties
+                                </h2>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Site Location</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={imagePropertiesForm.site_location}
+                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, site_location: e.target.value }))}
+                                        >
+                                            <option value="Toll">Toll</option>
+                                            <option value="Weight in Motion (WIM)">Weight in Motion (WIM)</option>
+                                            <option value="Freeflow">Freeflow</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Scene</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={imagePropertiesForm.scene}
+                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, scene: e.target.value }))}
+                                        >
+                                            <option value="day">Day</option>
+                                            <option value="night">Night</option>
+                                            <option value="twilight">Twilight</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Camera Position</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={imagePropertiesForm.camera_position}
+                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, camera_position: e.target.value }))}
+                                        >
+                                            <option value="front">Front</option>
+                                            <option value="rear">Rear</option>
+                                            <option value="side">Side</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
+
                                 <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     ⚙️ Vehicle Properties
                                 </h2>
@@ -3732,7 +3811,7 @@
                                                 brand: '',
                                                 model: '',
                                                 color: '',
-                                                direction: 'Northbound',
+                                                direction: 'northbound',
                                                 number_of_axles_inferred: 2,
                                                 number_of_axles_raised: 0,
                                                 truck_trailer_labels_visible: false,
