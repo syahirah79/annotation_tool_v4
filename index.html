@@ -470,7 +470,8 @@
             const [imagePropertiesForm, setImagePropertiesForm] = React.useState({
                 site_location: 'Toll',
                 scene: 'day',
-                camera_position: 'front'
+                camera_position: 'front',
+                is_rain: false
             });
 
             // Current annotation form data
@@ -482,7 +483,7 @@
                 brand: '',
                 model: '',
                 color: '',
-                direction: 'northbound',
+                direction: 'Northbound',
                 // Mechanical
                 number_of_axles_inferred: 2,
                 number_of_axles_raised: 0,
@@ -544,7 +545,7 @@
                 'Container': ['20ft Container', '40ft Container', 'Refrigerated Container', 'Open Top Container', 'Tank Container', 'Other'],
             };
             
-            const directions = ['northbound', 'southbound', 'eastbound', 'westbound', 'towards_camera', 'away_from_camera', 'left_to_right', 'right_to_left', 'unknown'];
+            const directions = ['Northbound', 'Southbound', 'Eastbound', 'Westbound'];
             const colors = ['White', 'Black', 'Silver', 'Gray', 'Red', 'Blue', 'Green', 'Yellow', 'Brown', 'Orange', 'Purple', 'Gold', 'Maroon', 'Other'];
             
             const annotationTypes = [
@@ -653,7 +654,7 @@
                                 brand: '',
                                 model: '',
                                 color: '',
-                                direction: 'northbound',
+                                direction: 'Northbound',
                                 number_of_axles_inferred: 2,
                                 number_of_axles_raised: 0,
                                 truck_trailer_labels_visible: false,
@@ -1732,7 +1733,8 @@
                         ...annotations.image,
                         site_location: imagePropertiesForm.site_location,
                         scene: imagePropertiesForm.scene,
-                        camera_position: imagePropertiesForm.camera_position
+                        camera_position: imagePropertiesForm.camera_position,
+                        is_rain: imagePropertiesForm.is_rain
                     },
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
@@ -1767,7 +1769,8 @@
                         ...annotations.image,
                         site_location: imagePropertiesForm.site_location,
                         scene: imagePropertiesForm.scene,
-                        camera_position: imagePropertiesForm.camera_position
+                        camera_position: imagePropertiesForm.camera_position,
+                        is_rain: imagePropertiesForm.is_rain
                     },
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
@@ -2773,7 +2776,7 @@
                                                             brand: obj.vehicle_info?.brand || '',
                                                             model: obj.vehicle_info?.model || '',
                                                             color: obj.vehicle_info?.color || '',
-                                                            direction: obj.direction || 'northbound',
+                                                            direction: obj.direction || 'Northbound',
                                                             number_of_axles_inferred: obj.mechanical?.number_of_axles_inferred || 2,
                                                             number_of_axles_raised: obj.mechanical?.number_of_axles_raised || 0,
                                                             truck_trailer_labels_visible: obj.mechanical?.truck_trailer_labels_visible || false,
@@ -3484,6 +3487,17 @@
                                     </div>
                                 </div>
 
+                                <div className="form-row">
+                                    <label className="checkbox-item">
+                                        <input
+                                            type="checkbox"
+                                            checked={imagePropertiesForm.is_rain}
+                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))}
+                                        />
+                                        Rain
+                                    </label>
+                                </div>
+
                                 <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
 
                                 <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3811,7 +3825,7 @@
                                                 brand: '',
                                                 model: '',
                                                 color: '',
-                                                direction: 'northbound',
+                                                direction: 'Northbound',
                                                 number_of_axles_inferred: 2,
                                                 number_of_axles_raised: 0,
                                                 truck_trailer_labels_visible: false,
