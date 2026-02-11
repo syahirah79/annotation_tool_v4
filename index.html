@@ -3485,17 +3485,16 @@
                                             <option value="side">Side</option>
                                         </select>
                                     </div>
-                                </div>
-
-                                <div className="form-row">
-                                    <label className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            checked={imagePropertiesForm.is_rain}
-                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))}
-                                        />
-                                        Rain
-                                    </label>
+                                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '4px' }}>
+                                        <label className="checkbox-item">
+                                            <input
+                                                type="checkbox"
+                                                checked={imagePropertiesForm.is_rain}
+                                                onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))}
+                                            />
+                                            Rain
+                                        </label>
+                                    </div>
                                 </div>
 
                                 <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
@@ -3702,17 +3701,16 @@
                                             onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_inferred: parseInt(e.target.value) }))}
                                         />
                                     </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Raised Axles</label>
-                                    <input
-                                        type="number"
-                                        className="input-field input-small"
-                                        min="0"
-                                        value={vehicleForm.number_of_axles_raised}
-                                        onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_raised: parseInt(e.target.value) }))}
-                                    />
+                                    <div className="form-group">
+                                        <label className="form-label">Raised Axles</label>
+                                        <input
+                                            type="number"
+                                            className="input-field input-small"
+                                            min="0"
+                                            value={vehicleForm.number_of_axles_raised}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, number_of_axles_raised: parseInt(e.target.value) }))}
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="checkbox-grid">
