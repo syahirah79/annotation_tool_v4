@@ -2192,7 +2192,7 @@
                     }
                 };
                 
-                const jsonSaved = await saveToSelectedDirectory(currentImageData, `${baseFilename}_annotations.json`);
+                const jsonSaved = await saveToSelectedDirectory(currentImageData, `${baseFilename}.json`);
                 
                 if (jsonSaved) {
                     // Save annotated image
@@ -2993,7 +2993,7 @@
                                                             }
                                                         };
                                                         
-                                                        await saveToSelectedDirectory(jsonData, `${baseFilename}_annotations.json`);
+                                                        await saveToSelectedDirectory(jsonData, `${baseFilename}.json`);
                                                         savedCount++;
                                                     }
                                                 }
