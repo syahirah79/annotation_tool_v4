@@ -1712,7 +1712,7 @@
                                         }
                                     };
                                     
-                                    await saveJsonToChosenLocation(jsonData, `${baseFilename}_annotations.json`);
+                                    await saveJsonToChosenLocation(jsonData, `${baseFilename}.json`);
                                     savedCount++;
                                 }
                             });
@@ -1828,7 +1828,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${annotations.image.filename.split('.')[0]}_annotations.json`;
+                a.download = `${annotations.image.filename.split('.')[0]}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
                 
@@ -1922,11 +1922,21 @@
                         
                         // FIXED: Better label positioning that avoids edges
                         let labelX = Math.max(4, Math.min(x, canvas.width - textWidth - 8));
-                        let labelY = y - textHeight - 10;
-                        
-                        // If label goes above image, put it inside the box
-                        if (labelY < textHeight + 5) {
-                            labelY = y + textHeight + 10;
+                        let labelY;
+
+                        if (obj.type === 'license_plate') {
+                            // License plate label goes below the bbox
+                            labelY = y + height + textHeight + 10;
+                            // If label goes below canvas, put it inside the box
+                            if (labelY > canvas.height - 5) {
+                                labelY = y + height - 10;
+                            }
+                        } else {
+                            labelY = y - textHeight - 10;
+                            // If label goes above image, put it inside the box
+                            if (labelY < textHeight + 5) {
+                                labelY = y + textHeight + 10;
+                            }
                         }
                         
                         // FIXED: Darker label background for better contrast
@@ -2253,8 +2263,14 @@
                             const textWidth = ctx.measureText(labelText).width;
                             
                             // FIXED: Better label positioning
-                            let labelY = y - fontSize - 8;
-                            if (labelY < fontSize + 5) labelY = y + fontSize + 8;
+                            let labelY;
+                            if (obj.type === 'license_plate') {
+                                labelY = y + height + fontSize + 8;
+                                if (labelY > canvas.height - 5) labelY = y + height - 8;
+                            } else {
+                                labelY = y - fontSize - 8;
+                                if (labelY < fontSize + 5) labelY = y + fontSize + 8;
+                            }
                             
                             // FIXED: Darker label background
                             ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
@@ -3114,7 +3130,7 @@
 
                                                 
                                                 
-                                                <div className="bbox-label">
+                                                <div className="bbox-label" style={obj.type === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
                                                     {getAnnotationIcon(obj.type, obj.wheel_type)} {
 													  obj.yolo_class_name
 														? obj.yolo_class_name
@@ -3183,7 +3199,7 @@
                                                     }}
                                                 >
 
-                                                    <div className="bbox-label">
+                                                    <div className="bbox-label" style={annotationType === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
                                                         {getAnnotationIcon(annotationType)} {annotationType === 'vehicle' ? vehicleForm.category || 'VEHICLE' : annotationType === 'made' ? madeBrand || 'MADE' : annotationType.replace('_', ' ').toUpperCase()} [Drawing...]
                                                     </div>                                                    
                                                 </div>
@@ -3610,15 +3626,6 @@
 
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">Brand</label>
-                                        <input
-                                            className="input-field input-small"
-                                            placeholder="e.g. Volvo, Mercedes"
-                                            value={vehicleForm.brand}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, brand: e.target.value }))}
-                                        />
-                                    </div>
-                                    <div className="form-group">
                                         <label className="form-label">Color</label>
                                         <select
                                             className="input-field input-small"
@@ -3631,9 +3638,6 @@
                                             ))}
                                         </select>
                                     </div>
-                                </div>
-
-                                <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Direction</label>
                                         <select
@@ -4329,7 +4333,7 @@
                                                     }}
                                                 >
 
-                                                    <div className="bbox-label">
+                                                    <div className="bbox-label" style={obj.type === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
                                                         {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type === 'made' ? (obj.brand || 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                         {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         {obj.type === 'vehicle' && vehicleForm.subcategory && ` (${vehicleForm.subcategory})`}
@@ -4340,7 +4344,7 @@
                                                             {annotations.objects.filter(child => child.parent_id === obj.id).length}
                                                         </div>
                                                     )}
-                                                    
+
                                                     {isSelected && (
                                                         <>
                                                             <div className="resize-handle nw" onMouseDown={(e) => handleBboxMouseDown(e, obj.id, 'nw')}></div>
