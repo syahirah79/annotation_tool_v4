@@ -481,7 +481,7 @@
 
                 subcategory: '',
                 country: 'MY',
-                brand: '',
+                made: '',
                 model: '',
                 color: '',
                 direction: 'Northbound',
@@ -653,7 +653,7 @@
                                 category: 'Car',
                                 subcategory: '',
                                 country: 'MY',
-                                brand: '',
+                                made: '',
                                 model: '',
                                 color: '',
                                 direction: 'Northbound',
@@ -1311,7 +1311,7 @@
                             category: vehicleForm.category,
                             subcategory: vehicleForm.subcategory,
                             country: vehicleForm.country,
-                            brand: vehicleForm.brand,
+                            made: vehicleForm.made,
                             model: vehicleForm.model,
                             color: vehicleForm.color
                         },
@@ -1355,7 +1355,7 @@
                 if (annotationType === 'made') {
                     return {
                         ...baseAnnotation,
-                        brand: madeBrand,
+                        made: madeBrand,
                         parent_id: null
                     };
                 }
@@ -1395,7 +1395,7 @@
                         ...prev,
                         objects: prev.objects.map(obj => {
                             if (obj.id === selectedAnnotation) {
-                                return { ...obj, brand: madeBrand };
+                                return { ...obj, made: madeBrand };
                             }
                             return obj;
                         })
@@ -1417,7 +1417,7 @@
                                     ...(obj.vehicle_info || {}),
                                     category: vehicleForm.category,
                                     subcategory: vehicleForm.subcategory,
-                                    brand: vehicleForm.brand,
+                                    made: vehicleForm.made,
                                     color: vehicleForm.color
                                 },
                                 mechanical: {
@@ -1587,7 +1587,7 @@
                             ...prev,
                             objects: prev.objects.map(obj =>
                                 obj.id === selectedAnnotation
-                                    ? { ...obj, type: 'made', brand: madeBrand }
+                                    ? { ...obj, type: 'made', made: madeBrand }
                                     : obj
                             )
                         }));
@@ -1905,8 +1905,8 @@
                         if (obj.type === 'wheel' && obj.wheel_type) {
                             labelText = `WHEEL (${obj.wheel_type.toUpperCase()})`;
                         }
-                        if (obj.type === 'made' && obj.brand) {
-                            labelText = `MADE - ${obj.brand}`;
+                        if (obj.type === 'made' && obj.made) {
+                            labelText = `MADE - ${obj.made}`;
                         }
                         if (obj.license_plate?.text) {
                             labelText += ` - ${obj.license_plate.text}`;
@@ -2253,8 +2253,8 @@
                             if (obj.type === 'wheel' && obj.wheel_type) {
                                 labelText = `WHEEL (${obj.wheel_type.toUpperCase()})`;
                             }
-                            if (obj.type === 'made' && obj.brand) {
-                                labelText = `MADE - ${obj.brand}`;
+                            if (obj.type === 'made' && obj.made) {
+                                labelText = `MADE - ${obj.made}`;
                             }
                             
                             // FIXED: Larger font
@@ -2780,10 +2780,10 @@
                                 </div>
                             )}
 
-                            {/* Brand Input - only show when made is selected */}
+                            {/* Made Input - only show when made is selected */}
                             {annotationType === 'made' && (
                                 <div className="form-group">
-                                    <label className="form-label">Brand</label>
+                                    <label className="form-label">Made</label>
                                     <input
                                         className="input-field input-small"
                                         placeholder="e.g. Toyota, Mercedes, Volvo"
@@ -2850,7 +2850,7 @@
                                                             category: obj.vehicle_info?.category || 'Car',
                                                             subcategory: obj.vehicle_info?.subcategory || '',
                                                             country: obj.vehicle_info?.country || 'MY',
-                                                            brand: obj.vehicle_info?.brand || '',
+                                                            made: obj.vehicle_info?.made || '',
                                                             model: obj.vehicle_info?.model || '',
                                                             color: obj.vehicle_info?.color || '',
                                                             direction: obj.direction || 'Northbound',
@@ -2873,14 +2873,14 @@
                                                         });
                                                     }
                                                     if (obj.type === 'made') {
-                                                        setMadeBrand(obj.brand || '');
+                                                        setMadeBrand(obj.made || '');
                                                         setAnnotationType('made');
                                                     }
                                                 }}                                            
                                             >
                                                 <div>  
                                                     <div className="annotation-type">
-                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.brand ? `MADE - ${obj.brand}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.made ? `MADE - ${obj.made}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                         {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         {obj.type === 'wheel' && obj.wheel_type && (
                                                             <span style={{ fontSize: '10px', color: '#6c757d', marginLeft: '4px' }}>
@@ -2945,7 +2945,7 @@
                                             animation: selectedDirectory ? 'none' : 'pulse 2s infinite'
                                         }}
                                     >
-                                        {selectedDirectory ? `📁 Save to: ${saveDirectoryName}` : '📁 Select Save Directory'}
+                                        {selectedDirectory ? `📁 Save to: ${saveDirectoryName}` : '📁 Select Save Directory (Press S)'}
                                     </button>                                    
 
                                     <button 
@@ -2957,7 +2957,7 @@
                                             background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
                                         }}
                                     >
-                                        💾 Save JSON + Annotated Image (Press S)
+                                        💾 Save JSON + Annotated Image (Ctrl + S)
                                     </button>
 
                                     {/* Save all annotated images at once */}
@@ -3137,7 +3137,7 @@
 														: (obj.type === 'vehicle'
 															? (vehicleForm.category || 'VEHICLE')
 															: obj.type === 'made'
-															? (obj.brand || 'MADE')
+															? (obj.made || 'MADE')
 															: obj.type.replace('_', ' ').toUpperCase()
 														  )
 													}
@@ -3891,7 +3891,7 @@
                                                 category: 'Light Vehicle',
                                                 subcategory: 'Sedan',
                                                 country: 'MY',
-                                                brand: '',
+                                                made: '',
                                                 model: '',
                                                 color: '',
                                                 direction: 'Northbound',
@@ -3998,7 +3998,7 @@
                                                     fontSize: '12px'
                                                 }}>
                                                     <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-                                                        {getAnnotationIcon(selected.type, selected.wheel_type)} {selected.type === 'made' ? (selected.brand ? `MADE - ${selected.brand}` : 'MADE') : selected.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(selected.type, selected.wheel_type)} {selected.type === 'made' ? (selected.made ? `MADE - ${selected.made}` : 'MADE') : selected.type.replace('_', ' ').toUpperCase()}
 
                                                     </div>
                                                     
@@ -4233,7 +4233,7 @@
                                                     fontSize: '12px',
                                                     width: '150px'
                                                 }}
-                                                placeholder="Brand name..."
+                                                placeholder="Made name..."
                                                 value={madeBrand}
                                                 onChange={(e) => setMadeBrand(e.target.value)}
                                             />
@@ -4334,7 +4334,7 @@
                                                 >
 
                                                     <div className="bbox-label" style={obj.type === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
-                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type === 'made' ? (obj.brand || 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type === 'made' ? (obj.made || 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                         {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         {obj.type === 'vehicle' && vehicleForm.subcategory && ` (${vehicleForm.subcategory})`}
                                                     </div>
@@ -4512,7 +4512,7 @@
                                                             fontWeight: 'bold',
                                                             marginBottom: '2px'
                                                         }}>
-                                                            {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.brand ? `MADE - ${obj.brand}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                            {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.made ? `MADE - ${obj.made}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                             {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         </div>
                                                         <div style={{
