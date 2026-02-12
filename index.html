@@ -3607,40 +3607,13 @@
 													setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))
 												}
 											/>
-											Rain
+											🌧 Rain
 										</label>
 									</div>
 
 									{/* empty column keeps the grid alignment consistent */}
 									<div className="form-group" />
 								</div>
-
-								'''
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Camera Position</label>
-                                        <select
-                                            className="input-field input-small"
-                                            value={imagePropertiesForm.camera_position}
-                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, camera_position: e.target.value }))}
-                                        >
-                                            <option value="front">Front</option>
-                                            <option value="rear">Rear</option>
-                                            <option value="side">Side</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '4px' }}>
-                                        <label className="checkbox-item">
-                                            <input
-                                                type="checkbox"
-                                                checked={imagePropertiesForm.is_rain}
-                                                onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))}
-                                            />
-                                            Rain
-                                        </label>
-                                    </div>
-                                </div>
-								'''
 
                                 <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
 
@@ -4624,6 +4597,7 @@
     </script>
 </body>
 </html>
+
 
 
 
