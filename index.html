@@ -1813,7 +1813,7 @@
                     },
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
-                        version: "2.0",
+                        version: "4.16",
                         exported_at: new Date().toISOString(),
                         schema_version: "AVC-ANPR-v2.0",
                         image_index: currentImageIndex + 1,
@@ -2182,15 +2182,22 @@
                 const baseFilename = annotations.image.filename.split('.')[0];
                 
                 // Save JSON
-                const currentImageData = {
-                    ...annotations,
-                    export_info: {
-                        tool: "Advanced Vehicle Dataset Annotation Tool",
-                        version: "2.0",
-                        exported_at: new Date().toISOString(),
-                        schema_version: "AVC-ANPR-v2.0"
-                    }
-                };
+				const currentImageData = {
+					...annotations,
+					image: {
+						...annotations.image,
+						site_location: imagePropertiesForm.site_location,
+						scene: imagePropertiesForm.scene,
+						camera_position: imagePropertiesForm.camera_position,
+						is_rain: imagePropertiesForm.is_rain
+					},
+					export_info: {
+						tool: "Advanced Vehicle Dataset Annotation Tool",
+						version: "4.16",
+						exported_at: new Date().toISOString(),
+						schema_version: "AVC-ANPR-v2.0"
+					}
+				};
                 
                 const jsonSaved = await saveToSelectedDirectory(currentImageData, `${baseFilename}.json`);
                 
@@ -2986,7 +2993,7 @@
                                                             },
                                                             export_info: {
                                                                 tool: "Advanced Vehicle Dataset Annotation Tool",
-                                                                version: "2.0",
+                                                                version: "4.16",
                                                                 exported_at: new Date().toISOString(),
                                                                 schema_version: "AVC-ANPR-v2.0",
                                                                 batch_export: true
