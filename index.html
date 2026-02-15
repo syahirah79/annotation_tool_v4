@@ -434,7 +434,7 @@
             const [selectedAnnotation, setSelectedAnnotation] = React.useState(null);
             const [annotationType, setAnnotationType] = React.useState('vehicle');
             const [wheelType, setWheelType] = React.useState('single');
-            const [makeBrand, setmakeBrand] = React.useState('');
+            const [madeBrand, setMadeBrand] = React.useState('');
             const [activeTab, setActiveTab] = React.useState('basic');
             // Image directory navigation
             const [imageDirectory, setImageDirectory] = React.useState([]);
@@ -482,7 +482,7 @@
 
                 subcategory: '',
                 country: 'MY',
-                make: '',
+                made: '',
                 model: '',
                 color: '',
                 direction: 'Northbound',
@@ -555,7 +555,7 @@
                 { type: 'license_plate', icon: '🔢', label: 'License Plate', color: '#3b82f6' },
                 { type: 'wheel', icon: '⚙️', label: 'Wheel', color: '#f59e0b' },
                 { type: 'attachment', icon: '🚛', label: 'Attachment', color: '#8b5cf6' },
-                { type: 'make', icon: '\u{1F3F7}', label: 'Make', color: '#ec4899' }
+                { type: 'made', icon: '\u{1F3F7}', label: 'Made', color: '#ec4899' }
             ];          
             const handleImageUpload = (file) => {
                 if (file && file.type.startsWith('image/')) {
@@ -654,7 +654,7 @@
                                 category: 'Car',
                                 subcategory: '',
                                 country: 'MY',
-                                make: '',
+                                made: '',
                                 model: '',
                                 color: '',
                                 direction: 'Northbound',
@@ -689,8 +689,6 @@
 
 
             const navigateToImage = (direction) => {
-                if (imageDirectory.length === 0) return;
-                
                 // Save current image annotations before switching
                 if (image && annotations.objects.length > 0) {
                     const currentFilename = annotations.image.filename;
@@ -704,14 +702,23 @@
                     }));
                     console.log(`💾 Saved ${annotations.objects.length} annotations for ${currentFilename}`);
                 }
-                
+
+                // Use YOLO-aware navigation when dataset index is available
+                const imageRows = datasetIndex.filter((r) => r.hasImage);
+                if (imageRows.length > 0) {
+                    navigateByIndex(direction);
+                    return;
+                }
+
+                if (imageDirectory.length === 0) return;
+
                 let newIndex = currentImageIndex;
                 if (direction === 'next') {
                     newIndex = (currentImageIndex + 1) % imageDirectory.length;
                 } else if (direction === 'prev') {
                     newIndex = currentImageIndex === 0 ? imageDirectory.length - 1 : currentImageIndex - 1;
                 }
-                
+
                 setCurrentImageIndex(newIndex);
                 loadImageAtIndex(imageDirectory, newIndex);
             };
@@ -1106,23 +1113,32 @@
 				  setImage(imageFile);
 				  setImagePreview(e.target.result);
 
-				  const objs = parseYoloTxtToObjects(yoloData.text, img.width, img.height);
-
-				  setAnnotations({
-					image: {
-					  filename: imageFile.name,
-					  width: img.width,
-					  height: img.height,
-					  timestamp: new Date().toISOString(),
-					},
-					objects: objs,
-				  });
+				  // Check if we have previously saved annotations for this image
+				  const savedData = imageAnnotationsMap[imageFile.name];
+				  if (savedData) {
+					setAnnotations(savedData.annotations);
+					setVehicleForm(savedData.vehicleForm);
+					if (savedData.imagePropertiesForm) {
+						setImagePropertiesForm(savedData.imagePropertiesForm);
+					}
+					console.log(`📂 Restored ${savedData.annotations.objects.length} saved annotations for ${imageFile.name}`);
+					showTemporaryMessage(`📂 Restored ${savedData.annotations.objects.length} annotations\n${imageFile.name}`);
+				  } else {
+					const objs = parseYoloTxtToObjects(yoloData.text, img.width, img.height);
+					setAnnotations({
+						image: {
+						  filename: imageFile.name,
+						  width: img.width,
+						  height: img.height,
+						  timestamp: new Date().toISOString(),
+						},
+						objects: objs,
+					});
+					showTemporaryMessage(`✅ Loaded YOLO: ${objs.length} boxes\n${yoloData.fileName}`);
+				  }
 
 				  setSelectedAnnotation(null);
 				  setIsDrawing(false);
-
-				  // Optional: a friendly message
-				  showTemporaryMessage(`✅ Loaded YOLO: ${objs.length} boxes\n${yoloData.fileName}`);
 				};
 				img.src = e.target.result;
 			  };
@@ -1312,7 +1328,7 @@
                             category: vehicleForm.category,
                             subcategory: vehicleForm.subcategory,
                             country: vehicleForm.country,
-                            make: vehicleForm.make,
+                            made: vehicleForm.made,
                             model: vehicleForm.model,
                             color: vehicleForm.color
                         },
@@ -1353,10 +1369,10 @@
                     };
                 }
 
-                if (annotationType === 'make') {
+                if (annotationType === 'made') {
                     return {
                         ...baseAnnotation,
-                        make: makeBrand,
+                        made: madeBrand,
                         parent_id: null
                     };
                 }
@@ -1380,28 +1396,28 @@
                     return;
                 }
                 
-                // Only update if it's a vehicle or make annotation
-                if (selectedObj.type !== 'vehicle' && selectedObj.type !== 'make') {
-                    alert('💡 This button only updates vehicle and make annotations!\n\nFor other types:\n• Use keyboard shortcuts (1,2,3,4,5,6)\n• Or use the type dropdown in "Selected Annotation" section');
+                // Only update if it's a vehicle or made annotation
+                if (selectedObj.type !== 'vehicle' && selectedObj.type !== 'made') {
+                    alert('💡 This button only updates vehicle and made annotations!\n\nFor other types:\n• Use keyboard shortcuts (1,2,3,4,5,6)\n• Or use the type dropdown in "Selected Annotation" section');
                     return;
                 }
                 
                 // Save to history before updating
                 saveToHistory(annotations);
                 
-                // Handle make annotation update
-                if (selectedObj.type === 'make') {
+                // Handle made annotation update
+                if (selectedObj.type === 'made') {
                     saveToHistory(annotations);
                     setAnnotations(prev => ({
                         ...prev,
                         objects: prev.objects.map(obj => {
                             if (obj.id === selectedAnnotation) {
-                                return { ...obj, make: makeBrand };
+                                return { ...obj, made: madeBrand };
                             }
                             return obj;
                         })
                     }));
-                    alert('make annotation updated successfully! 🎉');
+                    alert('Made annotation updated successfully! 🎉');
                     return;
                 }
 
@@ -1418,7 +1434,7 @@
                                     ...(obj.vehicle_info || {}),
                                     category: vehicleForm.category,
                                     subcategory: vehicleForm.subcategory,
-                                    make: vehicleForm.make,
+                                    made: vehicleForm.made,
                                     color: vehicleForm.color
                                 },
                                 mechanical: {
@@ -1580,7 +1596,7 @@
                             )
                         }));
                     }
-                    // Change to make with '6' key
+                    // Change to made with '6' key
                     if (e.key === '6' && selectedAnnotation) {
                         e.preventDefault();
                         saveToHistory(annotations);
@@ -1588,7 +1604,7 @@
                             ...prev,
                             objects: prev.objects.map(obj =>
                                 obj.id === selectedAnnotation
-                                    ? { ...obj, type: 'make', make: makeBrand }
+                                    ? { ...obj, type: 'made', made: madeBrand }
                                     : obj
                             )
                         }));
@@ -1730,8 +1746,8 @@
                         e.preventDefault();
                         setIsFullscreen(true);
                     }  
-                    // Navigation with arrow keys (only in fullscreen mode with image directory)
-                    if (isFullscreen && imageDirectory.length > 1) {
+                    // Navigation with arrow keys (only in fullscreen mode with image directory or dataset index)
+                    if (isFullscreen && (imageDirectory.length > 1 || datasetIndex.filter(r => r.hasImage).length > 1)) {
                         if (e.key === 'ArrowLeft') {
                             e.preventDefault();
                             navigateToImage('prev');
@@ -1747,7 +1763,7 @@
 
                 document.addEventListener('keydown', handleKeyDown);
                 return () => document.removeEventListener('keydown', handleKeyDown);
-            }, [selectedAnnotation, annotations, isDrawing, undoHistory, redoHistory, isFullscreen, imageDirectory, currentImageIndex, selectedDirectory, image]);
+            }, [selectedAnnotation, annotations, isDrawing, undoHistory, redoHistory, isFullscreen, imageDirectory, currentImageIndex, selectedDirectory, image, datasetIndex, currentBase]);
 
                         
 
@@ -1873,7 +1889,7 @@
                             'license_plate': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.08)' },
                             'wheel': { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.08)' },
                             'attachment': { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.08)' },
-                            'make': { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.08)' }
+                            'made': { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.08)' }
                         };
                         
                         const colors = typeColors[obj.type] || typeColors['vehicle'];
@@ -1908,8 +1924,8 @@
                         if (obj.type === 'wheel' && obj.wheel_type) {
                             labelText = `WHEEL (${obj.wheel_type.toUpperCase()})`;
                         }
-                        if (obj.type === 'make' && obj.make) {
-                            labelText = `MKAE - ${obj.make}`;
+                        if (obj.type === 'made' && obj.made) {
+                            labelText = `MADE - ${obj.made}`;
                         }
                         if (obj.license_plate?.text) {
                             labelText += ` - ${obj.license_plate.text}`;
@@ -2264,8 +2280,8 @@
                             if (obj.type === 'wheel' && obj.wheel_type) {
                                 labelText = `WHEEL (${obj.wheel_type.toUpperCase()})`;
                             }
-                            if (obj.type === 'make' && obj.make) {
-                                labelText = `MAKE - ${obj.make}`;
+                            if (obj.type === 'made' && obj.made) {
+                                labelText = `MADE - ${obj.made}`;
                             }
                             
                             // FIXED: Larger font
@@ -2383,7 +2399,7 @@
                 };
 
            
-            }, [isDrawing, drawingStart, currentBox, annotationType, vehicleForm, makeBrand, isDraggingBox, isResizingBox, editingBoxId, initialBoxState, initialMousePos, resizeHandle, annotations.objects, isPanning, lastPanPoint]);
+            }, [isDrawing, drawingStart, currentBox, annotationType, vehicleForm, madeBrand, isDraggingBox, isResizingBox, editingBoxId, initialBoxState, initialMousePos, resizeHandle, annotations.objects, isPanning, lastPanPoint]);
             // Force re-render when switching between modes
             React.useEffect(() => {
                 // This will trigger a re-render of bboxes when switching modes
@@ -2399,7 +2415,7 @@
                     case 'license_plate': return '2';
                     case 'wheel': return wheelType === 'double' ? '4' : '3';
                     case 'attachment': return '5';
-                    case 'make': return '6';
+                    case 'made': return '6';
                     default: return '📦';
                 }
             };
@@ -2754,7 +2770,7 @@
                                     <option value="license_plate">🔢 License Plate</option>
                                     <option value="wheel">⚙️ Wheel</option>
                                     <option value="attachment">🚛 Attachment/Trailer</option>
-                                    <option value="make">🏷️ Make (Logo/Brand)</option>
+                                    <option value="made">🏷️ Made (Logo/Brand)</option>
                                 </select>
                             </div>
 
@@ -2791,15 +2807,15 @@
                                 </div>
                             )}
 
-                            {/* Make Input - only show when make is selected */}
-                            {annotationType === 'make' && (
+                            {/* Made Input - only show when made is selected */}
+                            {annotationType === 'made' && (
                                 <div className="form-group">
-                                    <label className="form-label">Make</label>
+                                    <label className="form-label">Made</label>
                                     <input
                                         className="input-field input-small"
                                         placeholder="e.g. Toyota, Mercedes, Volvo"
-                                        value={makeBrand}
-                                        onChange={(e) => setMakeBrand(e.target.value)}
+                                        value={madeBrand}
+                                        onChange={(e) => setMadeBrand(e.target.value)}
                                     />
                                 </div>
                             )}
@@ -2861,7 +2877,7 @@
                                                             category: obj.vehicle_info?.category || 'Car',
                                                             subcategory: obj.vehicle_info?.subcategory || '',
                                                             country: obj.vehicle_info?.country || 'MY',
-                                                            make: obj.vehicle_info?.make || '',
+                                                            made: obj.vehicle_info?.made || '',
                                                             model: obj.vehicle_info?.model || '',
                                                             color: obj.vehicle_info?.color || '',
                                                             direction: obj.direction || 'Northbound',
@@ -2883,15 +2899,15 @@
                                                             chainOfThought: Array.isArray(obj.CoT) ? obj.CoT : []
                                                         });
                                                     }
-                                                    if (obj.type === 'make') {
-                                                        setMakeBrand(obj.make || '');
-                                                        setAnnotationType('make');
+                                                    if (obj.type === 'made') {
+                                                        setMadeBrand(obj.made || '');
+                                                        setAnnotationType('made');
                                                     }
                                                 }}                                            
                                             >
                                                 <div>  
                                                     <div className="annotation-type">
-                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'make' ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.made ? `MADE - ${obj.made}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                         {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         {obj.type === 'wheel' && obj.wheel_type && (
                                                             <span style={{ fontSize: '10px', color: '#6c757d', marginLeft: '4px' }}>
@@ -3147,8 +3163,8 @@
 														? obj.yolo_class_name
 														: (obj.type === 'vehicle'
 															? (vehicleForm.category || 'VEHICLE')
-															: obj.type === 'make'
-															? (obj.make || 'MAKE')
+															: obj.type === 'made'
+															? (obj.made || 'MADE')
 															: obj.type.replace('_', ' ').toUpperCase()
 														  )
 													}
@@ -3211,7 +3227,7 @@
                                                 >
 
                                                     <div className="bbox-label" style={annotationType === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
-                                                        {getAnnotationIcon(annotationType)} {annotationType === 'vehicle' ? vehicleForm.category || 'VEHICLE' : annotationType === 'make' ? makeBrand || 'MAKE' : annotationType.replace('_', ' ').toUpperCase()} [Drawing...]
+                                                        {getAnnotationIcon(annotationType)} {annotationType === 'vehicle' ? vehicleForm.category || 'VEHICLE' : annotationType === 'made' ? madeBrand || 'MADE' : annotationType.replace('_', ' ').toUpperCase()} [Drawing...]
                                                     </div>                                                    
                                                 </div>
                                             );
@@ -3235,7 +3251,7 @@
                                     </div>
 
                                     {/* Navigation arrows */}
-                                    {imageDirectory.length > 1 && (
+                                    {(imageDirectory.length > 1 || datasetIndex.filter(r => r.hasImage).length > 1) && (
                                         <>
                                             <button 
                                                 onClick={() => navigateToImage('prev')}
@@ -3303,7 +3319,14 @@
                                                 fontWeight: 'bold',
                                                 zIndex: 100
                                             }}>
-                                                {currentImageIndex + 1} / {imageDirectory.length}
+                                                {(() => {
+                                                    const imageRows = datasetIndex.filter(r => r.hasImage);
+                                                    if (imageRows.length > 0 && currentBase) {
+                                                        const idx = imageRows.findIndex(r => r.base === currentBase);
+                                                        return `${idx >= 0 ? idx + 1 : '?'} / ${imageRows.length}`;
+                                                    }
+                                                    return `${currentImageIndex + 1} / ${imageDirectory.length}`;
+                                                })()}
                                             </div>
                                         </>
                                     )}                                    
@@ -3607,13 +3630,40 @@
 													setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))
 												}
 											/>
-											🌧 Rain
+											Rain
 										</label>
 									</div>
 
 									{/* empty column keeps the grid alignment consistent */}
 									<div className="form-group" />
 								</div>
+
+								'''
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Camera Position</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={imagePropertiesForm.camera_position}
+                                            onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, camera_position: e.target.value }))}
+                                        >
+                                            <option value="front">Front</option>
+                                            <option value="rear">Rear</option>
+                                            <option value="side">Side</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '4px' }}>
+                                        <label className="checkbox-item">
+                                            <input
+                                                type="checkbox"
+                                                checked={imagePropertiesForm.is_rain}
+                                                onChange={(e) => setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))}
+                                            />
+                                            Rain
+                                        </label>
+                                    </div>
+                                </div>
+								'''
 
                                 <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
 
@@ -3926,7 +3976,7 @@
                                                 category: 'Light Vehicle',
                                                 subcategory: 'Sedan',
                                                 country: 'MY',
-                                                make: '',
+                                                made: '',
                                                 model: '',
                                                 color: '',
                                                 direction: 'Northbound',
@@ -4033,7 +4083,7 @@
                                                     fontSize: '12px'
                                                 }}>
                                                     <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-                                                        {getAnnotationIcon(selected.type, selected.wheel_type)} {selected.type === 'make' ? (selected.make ? `MAKE - ${selected.make}` : 'MAKE') : selected.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(selected.type, selected.wheel_type)} {selected.type === 'made' ? (selected.made ? `MADE - ${selected.made}` : 'MADE') : selected.type.replace('_', ' ').toUpperCase()}
 
                                                     </div>
                                                     
@@ -4234,7 +4284,7 @@
                                             <option value="license_plate" style={{ color: 'black' }}>🔢 License Plate</option>
                                             <option value="wheel" style={{ color: 'black' }}>⚙️ Wheel</option>
                                             <option value="attachment" style={{ color: 'black' }}>🚛 Attachment</option>
-                                            <option value="make" style={{ color: 'black' }}>🏷️ Make (Logo/Brand)</option>
+                                            <option value="made" style={{ color: 'black' }}>🏷️ Made (Logo/Brand)</option>
                                         </select>
                                         
                                         {annotationType === 'wheel' && (
@@ -4256,7 +4306,7 @@
                                             </select>
                                         )}
 
-                                        {annotationType === 'make' && (
+                                        {annotationType === 'made' && (
                                             <input
                                                 className="fullscreen-btn"
                                                 style={{
@@ -4268,9 +4318,9 @@
                                                     fontSize: '12px',
                                                     width: '150px'
                                                 }}
-                                                placeholder="Make name..."
-                                                value={makeBrand}
-                                                onChange={(e) => setMakeBrand(e.target.value)}
+                                                placeholder="Made name..."
+                                                value={madeBrand}
+                                                onChange={(e) => setMadeBrand(e.target.value)}
                                             />
                                         )}
 
@@ -4369,7 +4419,7 @@
                                                 >
 
                                                     <div className="bbox-label" style={obj.type === 'license_plate' ? { top: 'auto', bottom: '-30px' } : {}}>
-                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type === 'make' ? (obj.make || 'MAKE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'vehicle' ? (vehicleForm.category || 'VEHICLE') : obj.type === 'made' ? (obj.made || 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                         {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         {obj.type === 'vehicle' && vehicleForm.subcategory && ` (${vehicleForm.subcategory})`}
                                                     </div>
@@ -4424,7 +4474,7 @@
                                                     >
 
                                                         <div className="bbox-label">
-                                                            {getAnnotationIcon(annotationType)} {annotationType === 'vehicle' ? vehicleForm.category || 'VEHICLE' : annotationType === 'make' ? makeBrand || 'MAKE' : annotationType.replace('_', ' ').toUpperCase()} [Drawing...]
+                                                            {getAnnotationIcon(annotationType)} {annotationType === 'vehicle' ? vehicleForm.category || 'VEHICLE' : annotationType === 'made' ? madeBrand || 'MADE' : annotationType.replace('_', ' ').toUpperCase()} [Drawing...]
                                                         </div>                                                        
                                                     </div>
                                                 );
@@ -4547,7 +4597,7 @@
                                                             fontWeight: 'bold',
                                                             marginBottom: '2px'
                                                         }}>
-                                                            {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'make' ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE') : obj.type.replace('_', ' ').toUpperCase()}
+                                                            {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'made' ? (obj.made ? `MADE - ${obj.made}` : 'MADE') : obj.type.replace('_', ' ').toUpperCase()}
                                                             {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
                                                         </div>
                                                         <div style={{
@@ -4597,8 +4647,6 @@
     </script>
 </body>
 </html>
-
-
 
 
 
