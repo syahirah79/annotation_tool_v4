@@ -1783,16 +1783,39 @@
                     // Save all annotated images with 'Ctrl+Shift+S' key
                     if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) {
                         e.preventDefault();
-                        if (imageDirectory.length > 1 && Object.keys(imageAnnotationsMap).length > 0) {
-                            // Trigger the save all function
-                            const annotatedImages = Object.keys(imageAnnotationsMap);
+                        if (!selectedDirectory) {
+                            alert('⚠️ Please select a save directory first!');
+                            return;
+                        }
+
+                        // Force-save current image first
+                        let latestMap = { ...imageAnnotationsMap };
+                        if (image && annotations.objects.length > 0) {
+                            latestMap[annotations.image.filename] = {
+                                annotations: JSON.parse(JSON.stringify(annotations)),
+                                vehicleForm: JSON.parse(JSON.stringify(vehicleForm)),
+                                imagePropertiesForm: JSON.parse(JSON.stringify(imagePropertiesForm))
+                            };
+                            setImageAnnotationsMap(latestMap);
+                        }
+
+                        const annotatedImages = Object.keys(latestMap);
+                        const total = annotatedImages.filter(f => latestMap[f].annotations.objects.length > 0).length;
+
+                        if (total === 0) {
+                            alert('No annotated images to save!');
+                            return;
+                        }
+
+                        (async () => {
                             let savedCount = 0;
-                            
-                            annotatedImages.forEach(async (filename) => {
-                                const imageData = imageAnnotationsMap[filename];
+                            showTemporaryMessage(`⏳ Saving ${total} annotated images (JSON + PNG)...`);
+
+                            for (const filename of annotatedImages) {
+                                const imageData = latestMap[filename];
                                 if (imageData.annotations.objects.length > 0) {
-                                    const baseFilename = filename.split('.')[0];
-                                    
+                                    const baseFilename = baseName(filename);
+
                                     const jsonData = {
                                         ...imageData.annotations,
                                         image: {
@@ -1801,24 +1824,38 @@
                                         },
                                         export_info: {
                                             tool: "Advanced Vehicle Dataset Annotation Tool",
-                                            version: "2.0",
+                                            version: "4.16",
                                             exported_at: new Date().toISOString(),
                                             schema_version: "AVC-ANPR-v2.0",
                                             batch_export: true
                                         }
                                     };
-                                    
-                                    await saveJsonToChosenLocation(jsonData, `${baseFilename}.json`);
+
+                                    await saveToSelectedDirectory(jsonData, `${baseFilename}.json`);
+
+                                    const imgFile = imageDirectory.find(f => f.name === filename)
+                                        || imageByBase[baseFilename]
+                                        || null;
+
+                                    if (imgFile) {
+                                        const blob = await generateAnnotatedBlob(
+                                            imgFile,
+                                            imageData.annotations.objects,
+                                            imageData.annotations.image.width,
+                                            imageData.annotations.image.height
+                                        );
+                                        if (blob) {
+                                            await saveToSelectedDirectory(blob, `${baseFilename}_annotated.png`, true);
+                                        }
+                                    }
+
                                     savedCount++;
+                                    showTemporaryMessage(`⏳ Saving... ${savedCount} / ${total}`);
                                 }
-                            });
-                            
-                            setTimeout(() => {
-                                alert(`🎉 Successfully saved ${savedCount} annotated images!`);
-                            }, 1000);
-                        } else {
-                            alert('No annotated images to save!');
-                        }
+                            }
+
+                            showTemporaryMessage(`🎉 Saved ${savedCount} images (JSON + PNG) to ${saveDirectoryName}!`);
+                        })();
                     }                    
                     // Fullscreen with 'F' key
                     if (e.key === 'f' || e.key === 'F') {
@@ -1887,7 +1924,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${annotations.image.filename.split('.')[0]}.json`;
+                a.download = `${baseName(annotations.image.filename)}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
             };
@@ -1926,10 +1963,10 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${annotations.image.filename.split('.')[0]}.json`;
+                a.download = `${baseName(annotations.image.filename)}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
-                
+
                 // Save annotated image with bboxes drawn on it
                 saveAnnotatedImage();
             };
@@ -2083,7 +2120,7 @@
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${annotations.image.filename.split('.')[0]}_annotated.png`;
+                        a.download = `${baseName(annotations.image.filename)}_annotated.png`;
                         a.click();
                         URL.revokeObjectURL(url);
                     }, 'image/png');
@@ -2360,8 +2397,8 @@
                     return;
                 }
                 
-                const baseFilename = annotations.image.filename.split('.')[0];
-                
+                const baseFilename = baseName(annotations.image.filename);
+
                 // Save JSON
 				const currentImageData = {
 					...annotations,
@@ -3206,7 +3243,7 @@
                                     </button>
 
                                     {/* Save all annotated images at once */}
-                                    {imageDirectory.length > 1 && Object.keys(imageAnnotationsMap).length > 0 && (
+                                    {imageDirectory.length > 1 && (Object.keys(imageAnnotationsMap).length > 0 || (image && annotations.objects.length > 0)) && (
                                         <button
                                             onClick={async () => {
                                                 if (!selectedDirectory) {
@@ -3214,16 +3251,28 @@
                                                     return;
                                                 }
 
-                                                const annotatedImages = Object.keys(imageAnnotationsMap);
+                                                // Force-save the current image's annotations before batch export
+                                                let latestMap = { ...imageAnnotationsMap };
+                                                if (image && annotations.objects.length > 0) {
+                                                    const currentFilename = annotations.image.filename;
+                                                    latestMap[currentFilename] = {
+                                                        annotations: JSON.parse(JSON.stringify(annotations)),
+                                                        vehicleForm: JSON.parse(JSON.stringify(vehicleForm)),
+                                                        imagePropertiesForm: JSON.parse(JSON.stringify(imagePropertiesForm))
+                                                    };
+                                                    setImageAnnotationsMap(latestMap);
+                                                }
+
+                                                const annotatedImages = Object.keys(latestMap);
                                                 let savedCount = 0;
-                                                const total = annotatedImages.filter(f => imageAnnotationsMap[f].annotations.objects.length > 0).length;
+                                                const total = annotatedImages.filter(f => latestMap[f].annotations.objects.length > 0).length;
 
                                                 showTemporaryMessage(`⏳ Saving ${total} annotated images (JSON + PNG)...`);
 
                                                 for (const filename of annotatedImages) {
-                                                    const imageData = imageAnnotationsMap[filename];
+                                                    const imageData = latestMap[filename];
                                                     if (imageData.annotations.objects.length > 0) {
-                                                        const baseFilename = filename.split('.')[0];
+                                                        const baseFilename = baseName(filename);
 
                                                         // Save JSON
                                                         const jsonData = {
@@ -3274,7 +3323,11 @@
                                                 background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)'
                                             }}
                                         >
-                                            💾 Save All JSON + Annotated Images ({Object.keys(imageAnnotationsMap).filter(filename => imageAnnotationsMap[filename].annotations.objects.length > 0).length})
+                                            💾 Save All Annotated JSON + Images ({(() => {
+                                                let count = Object.keys(imageAnnotationsMap).filter(f => imageAnnotationsMap[f].annotations.objects.length > 0).length;
+                                                if (image && annotations.objects.length > 0 && !imageAnnotationsMap[annotations.image.filename]) count++;
+                                                return count;
+                                            })()})
                                         </button>
                                     )}
 
