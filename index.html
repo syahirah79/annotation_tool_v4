@@ -2265,6 +2265,89 @@
                 }
             };            
 
+            // Helper: draw annotation boxes onto a canvas context
+            const drawAnnotationsOnCanvas = (ctx, canvasW, canvasH, objects) => {
+                const typeColors = {
+                    'vehicle': { stroke: '#22c55e', fill: 'rgba(34, 197, 94, 0.08)' },
+                    'license_plate': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.08)' },
+                    'wheel': { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.08)' },
+                    'attachment': { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.08)' },
+                    'made': { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.08)' }
+                };
+
+                const sorted = [...objects].sort((a, b) => {
+                    const areaA = (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]);
+                    const areaB = (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
+                    return areaB - areaA;
+                });
+
+                sorted.forEach((obj) => {
+                    const bbox = obj.bbox;
+                    const colors = typeColors[obj.type] || typeColors['vehicle'];
+                    const x = Math.round(bbox[0]);
+                    const y = Math.round(bbox[1]);
+                    const width = Math.round(bbox[2] - bbox[0]);
+                    const height = Math.round(bbox[3] - bbox[1]);
+                    if (width <= 0 || height <= 0) return;
+
+                    ctx.fillStyle = colors.fill;
+                    ctx.fillRect(x, y, width, height);
+
+                    ctx.strokeStyle = colors.stroke;
+                    ctx.lineWidth = Math.max(5, Math.min(8, Math.sqrt(width * height) / 30));
+                    ctx.setLineDash([]);
+                    ctx.strokeRect(x, y, width, height);
+
+                    let labelText = obj.type.replace('_', ' ').toUpperCase();
+                    if (obj.type === 'vehicle' && obj.vehicle_info?.category) labelText = obj.vehicle_info.category.toUpperCase();
+                    if (obj.type === 'wheel' && obj.wheel_type) labelText = `WHEEL (${obj.wheel_type.toUpperCase()})`;
+                    if (obj.type === 'made' && obj.made) labelText = `MADE - ${obj.made}`;
+
+                    const fontSize = Math.max(18, Math.min(24, Math.min(width, height) / 8));
+                    ctx.font = `bold ${fontSize}px Arial`;
+                    const textWidth = ctx.measureText(labelText).width;
+
+                    let labelY;
+                    if (obj.type === 'license_plate') {
+                        labelY = y + height + fontSize + 8;
+                        if (labelY > canvasH - 5) labelY = y + height - 8;
+                    } else {
+                        labelY = y - fontSize - 8;
+                        if (labelY < fontSize + 5) labelY = y + fontSize + 8;
+                    }
+
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                    ctx.fillRect(x, labelY - fontSize - 5, textWidth + 12, fontSize + 10);
+
+                    ctx.strokeStyle = 'black';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(labelText, x + 6, labelY - 3);
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(labelText, x + 6, labelY - 3);
+                });
+            };
+
+            // Helper: generate annotated PNG blob from an image File and annotation objects
+            const generateAnnotatedBlob = (imageFile, annotationObjects, imgWidth, imgHeight) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            canvas.width = imgWidth || img.width;
+                            canvas.height = imgHeight || img.height;
+                            ctx.drawImage(img, 0, 0);
+                            drawAnnotationsOnCanvas(ctx, canvas.width, canvas.height, annotationObjects);
+                            canvas.toBlob((blob) => resolve(blob), 'image/png');
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(imageFile);
+                });
+            };
+
             const saveCurrentImageToChosenLocation = async () => {
                 if (!image || annotations.objects.length === 0) {
                     alert('No annotations to save for current image!');
@@ -3124,21 +3207,24 @@
 
                                     {/* Save all annotated images at once */}
                                     {imageDirectory.length > 1 && Object.keys(imageAnnotationsMap).length > 0 && (
-                                        <button 
+                                        <button
                                             onClick={async () => {
                                                 if (!selectedDirectory) {
                                                     alert('⚠️ Please select a save directory first!');
                                                     return;
                                                 }
-                                                
+
                                                 const annotatedImages = Object.keys(imageAnnotationsMap);
                                                 let savedCount = 0;
-                                                
+                                                const total = annotatedImages.filter(f => imageAnnotationsMap[f].annotations.objects.length > 0).length;
+
+                                                showTemporaryMessage(`⏳ Saving ${total} annotated images (JSON + PNG)...`);
+
                                                 for (const filename of annotatedImages) {
                                                     const imageData = imageAnnotationsMap[filename];
                                                     if (imageData.annotations.objects.length > 0) {
                                                         const baseFilename = filename.split('.')[0];
-                                                        
+
                                                         // Save JSON
                                                         const jsonData = {
                                                             ...imageData.annotations,
@@ -3154,17 +3240,36 @@
                                                                 batch_export: true
                                                             }
                                                         };
-                                                        
+
                                                         await saveToSelectedDirectory(jsonData, `${baseFilename}.json`);
+
+                                                        // Save annotated PNG — find the image File
+                                                        const imgFile = imageDirectory.find(f => f.name === filename)
+                                                            || imageByBase[baseFilename]
+                                                            || null;
+
+                                                        if (imgFile) {
+                                                            const blob = await generateAnnotatedBlob(
+                                                                imgFile,
+                                                                imageData.annotations.objects,
+                                                                imageData.annotations.image.width,
+                                                                imageData.annotations.image.height
+                                                            );
+                                                            if (blob) {
+                                                                await saveToSelectedDirectory(blob, `${baseFilename}_annotated.png`, true);
+                                                            }
+                                                        }
+
                                                         savedCount++;
+                                                        showTemporaryMessage(`⏳ Saving... ${savedCount} / ${total}`);
                                                     }
                                                 }
-                                                
-                                                console.log(`🎉 Successfully saved ${savedCount} annotated images to ${saveDirectoryName}!`);
+
+                                                showTemporaryMessage(`🎉 Saved ${savedCount} images (JSON + PNG) to ${saveDirectoryName}!`);
                                             }}
                                             className="btn-primary"
-                                            style={{ 
-                                                width: '100%', 
+                                            style={{
+                                                width: '100%',
                                                 marginBottom: '8px',
                                                 background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)'
                                             }}
@@ -3771,22 +3876,17 @@
 									</div>
 								</div>
 
-								<div className="form-row">
-									<div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '4px' }}>
-										<label className="checkbox-item">
-											<input
-												type="checkbox"
-												checked={imagePropertiesForm.is_rain}
-												onChange={(e) =>
-													setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))
-												}
-											/>
-											Rain
-										</label>
-									</div>
-
-									{/* empty column keeps the grid alignment consistent */}
-									<div className="form-group" />
+								<div className="checkbox-grid">
+									<label className="checkbox-item">
+										<input
+											type="checkbox"
+											checked={imagePropertiesForm.is_rain}
+											onChange={(e) =>
+												setImagePropertiesForm(prev => ({ ...prev, is_rain: e.target.checked }))
+											}
+										/>
+										🌧️ Rain
+									</label>
 								</div>
 
                                 <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '20px 0' }} />
