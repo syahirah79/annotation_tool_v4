@@ -1816,20 +1816,7 @@
                                 if (imageData.annotations.objects.length > 0) {
                                     const baseFilename = baseName(filename);
 
-                                    const jsonData = {
-                                        ...imageData.annotations,
-                                        image: {
-                                            ...imageData.annotations.image,
-                                            ...(imageData.imagePropertiesForm || {})
-                                        },
-                                        export_info: {
-                                            tool: "Advanced Vehicle Dataset Annotation Tool",
-                                            version: "4.16",
-                                            exported_at: new Date().toISOString(),
-                                            schema_version: "AVC-ANPR-v2.0",
-                                            batch_export: true
-                                        }
-                                    };
+                                    const jsonData = buildExportJson(imageData.annotations, imageData.imagePropertiesForm);
 
                                     await saveToSelectedDirectory(jsonData, `${baseFilename}.json`);
 
@@ -1897,30 +1884,224 @@
             };
                         
             
-            // Export functionality
-            const exportAnnotations = () => {
-                const exportData = {
-                    ...annotations,
-                    image: {
-                        ...annotations.image,
-						image_type: imagePropertiesForm.image_type,
-                        site_location: imagePropertiesForm.site_location,
-                        scene: imagePropertiesForm.scene,
-                        camera_position: imagePropertiesForm.camera_position,
-                        is_rain: imagePropertiesForm.is_rain
+            // ── Schema transformer: flat annotations → imap_annotation_v1 ──
+            const buildExportJson = (annots, imgPropsForm) => {
+                const objs = annots.objects || [];
+                const imgMeta = annots.image || {};
+                const props = imgPropsForm || {};
+
+                // Helper: convert [x1,y1,x2,y2] → {x,y,w,h}
+                const bboxToXYWH = (b) => {
+                    if (!b || b.length < 4) return null;
+                    return { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] };
+                };
+
+                // Helper: check if child bbox is inside parent bbox
+                const isInside = (child, parent) => {
+                    if (!child || !parent || child.length < 4 || parent.length < 4) return false;
+                    // Allow some tolerance (child center must be inside parent)
+                    const cx = (child[0] + child[2]) / 2;
+                    const cy = (child[1] + child[3]) / 2;
+                    return cx >= parent[0] && cx <= parent[2] && cy >= parent[1] && cy <= parent[3];
+                };
+
+                // 1. Identify all vehicles and assign vhcl_XX IDs
+                const vehicles = objs.filter(o => o.type === 'vehicle');
+                const nonVehicles = objs.filter(o => o.type !== 'vehicle');
+
+                // 2. Build output vehicles with components
+                const outputVehicles = vehicles.map((veh, idx) => {
+                    const vId = `vhcl_${String(idx + 1).padStart(2, '0')}`;
+
+                    // Find children: non-vehicle objects whose bbox center is inside this vehicle's bbox
+                    // Also respect explicit parent_id if already set
+                    const children = nonVehicles.filter(child => {
+                        if (child.parent_id === veh.id) return true;
+                        // Skip if already claimed by explicit parent_id
+                        if (child.parent_id && child.parent_id !== veh.id) return false;
+                        return isInside(child.bbox, veh.bbox);
+                    });
+
+                    // Build components with proper IDs
+                    let lpCount = 0, whlCount = 0, mkCount = 0, otherCount = 0;
+                    const components = children.map(child => {
+                        let compId, compType;
+                        const childBbox = bboxToXYWH(child.bbox);
+
+                        if (child.type === 'license_plate') {
+                            lpCount++;
+                            compId = `${vId}_lp_${String(lpCount).padStart(2, '0')}`;
+                            compType = 'license_plate';
+                            return {
+                                id: compId,
+                                type: compType,
+                                parent_id: vId,
+                                bbox: childBbox,
+                                text: child.license_plate?.text || child.text || null,
+                                country: child.license_plate?.country || child.country || null,
+                                format: child.license_plate?.format || child.format || null,
+                                blurred: child.license_plate?.blurred ?? child.blurred ?? false,
+                                visible: child.license_plate?.visible ?? child.visible ?? true
+                            };
+                        }
+
+                        if (child.type === 'wheel' || child.type === 'singleWheel' || child.type === 'doubleWheel') {
+                            whlCount++;
+                            const wType = (child.wheel_type === 'double' || child.type === 'doubleWheel') ? 'wheel_double' : 'wheel_single';
+                            compId = `${vId}_whl_${String(whlCount).padStart(2, '0')}`;
+                            return {
+                                id: compId,
+                                type: wType,
+                                parent_id: vId,
+                                bbox: childBbox
+                            };
+                        }
+
+                        if (child.type === 'made' || child.type === 'make') {
+                            mkCount++;
+                            compId = `${vId}_mk_${String(mkCount).padStart(2, '0')}`;
+                            return {
+                                id: compId,
+                                type: 'make_logo',
+                                parent_id: vId,
+                                bbox: childBbox,
+                                brand: child.made || child.make || null
+                            };
+                        }
+
+                        if (child.type === 'attachment') {
+                            otherCount++;
+                            compId = `${vId}_att_${String(otherCount).padStart(2, '0')}`;
+                            return {
+                                id: compId,
+                                type: 'attachment',
+                                parent_id: vId,
+                                bbox: childBbox
+                            };
+                        }
+
+                        // Fallback
+                        otherCount++;
+                        compId = `${vId}_comp_${String(otherCount).padStart(2, '0')}`;
+                        return {
+                            id: compId,
+                            type: child.type || 'unknown',
+                            parent_id: vId,
+                            bbox: childBbox
+                        };
+                    });
+
+                    // Extract vehicle fields
+                    const vi = veh.vehicle_info || {};
+                    const mech = veh.mechanical || {};
+                    const attrs = veh.attributes || {};
+                    const lp = veh.license_plate || {};
+                    const isGray = (props.image_type === 'gray');
+
+                    return {
+                        id: vId,
+                        type: 'vehicle',
+                        parent_id: null,
+                        bbox: bboxToXYWH(veh.bbox),
+
+                        basic_information: {
+                            category: vi.category || veh.yolo_class_name || null,
+                            subcategory: vi.subcategory || null,
+                            colour: isGray ? null : (vi.color || null),
+                            direction: veh.direction || null
+                        },
+
+                        licence_plate_information: {
+                            is_visible: lp.visible ?? (!!lp.text),
+                            bbox: bboxToXYWH(lp.bbox) || null,
+                            plate_text: lp.text || null,
+                            plate_country: lp.country || null,
+                            plate_format: lp.format || null
+                        },
+
+                        mechanical_properties: {
+                            axles_inferred: mech.number_of_axles_inferred ?? null,
+                            raised_axles: mech.number_of_axles_raised > 0 ? true : (mech.number_of_axles_raised === 0 ? false : null),
+                            truck_trailer_labels_visible: mech.truck_trailer_labels_visible ?? null,
+                            cargo_present: mech.cargo_present ?? null
+                        },
+
+                        vehicle_attributes: {
+                            is_taxi: attrs.is_taxi ?? null,
+                            is_bus: attrs.is_bus ?? null,
+                            bus_type: attrs.bus_type || null,
+                            is_emergency_vehicle: attrs.is_emergency_vehicle ?? null,
+                            is_electric: attrs.is_electric ?? null
+                        },
+
+                        CoT: veh.CoT || [],
+
+                        components: components
+                    };
+                });
+
+                // 3. Collect orphan non-vehicle objects (not inside any vehicle bbox)
+                const claimedIds = new Set();
+                outputVehicles.forEach(v => v.components.forEach(c => {
+                    // We need to track which original objects were claimed
+                }));
+                // Re-check: find non-vehicles not inside any vehicle
+                const orphans = nonVehicles.filter(child => {
+                    if (child.parent_id) {
+                        return !vehicles.some(v => v.id === child.parent_id);
+                    }
+                    return !vehicles.some(v => isInside(child.bbox, v.bbox));
+                }).map((child, idx) => {
+                    const childBbox = bboxToXYWH(child.bbox);
+                    let compType = child.type || 'unknown';
+                    if (child.type === 'singleWheel' || child.type === 'doubleWheel') compType = child.type === 'doubleWheel' ? 'wheel_double' : 'wheel_single';
+                    if (child.type === 'made' || child.type === 'make') compType = 'make_logo';
+                    return {
+                        id: `orphan_${String(idx + 1).padStart(2, '0')}`,
+                        type: compType,
+                        parent_id: null,
+                        bbox: childBbox,
+                        ...(child.made || child.make ? { brand: child.made || child.make } : {}),
+                        ...(child.wheel_type ? { wheel_type: child.wheel_type } : {})
+                    };
+                });
+
+                // 4. Build final output
+                return {
+                    schema_name: "imap_annotation_v1",
+                    source_template: "template_01.json (modified)",
+                    image_metadata: {
+                        image_id: null,
+                        filename: imgMeta.filename || null,
+                        width: imgMeta.width || null,
+                        height: imgMeta.height || null,
+                        timestamp: imgMeta.timestamp || null,
+                        image_type: props.image_type || imgMeta.image_type || "RGB",
+                        is_grayscale: (props.image_type === 'gray'),
+                        site_location: props.site_location || null,
+                        scene: props.scene || null,
+                        camera_position: props.camera_position || null,
+                        is_rain: props.is_rain ?? false
                     },
+                    vehicles: outputVehicles,
+                    ...(orphans.length > 0 ? { unassigned_components: orphans } : {}),
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
-                        version: "2.0",
+                        version: "4.16",
                         exported_at: new Date().toISOString(),
-                        schema_version: "AVC-ANPR-v2.0"
+                        schema_name: "imap_annotation_v1"
                     }
                 };
-                
+            };
+
+            // Export functionality
+            const exportAnnotations = () => {
+                const exportData = buildExportJson(annotations, imagePropertiesForm);
+
                 const blob = new Blob([JSON.stringify(exportData, null, 2)], {
                     type: 'application/json'
                 });
-                
+
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -1934,32 +2115,14 @@
                     alert('No annotations to save for current image!');
                     return;
                 }
-                
-                // Save JSON data
-                const currentImageData = {
-                    ...annotations,
-                    image: {
-                        ...annotations.image,
-						image_type: imagePropertiesForm.image_type,
-                        site_location: imagePropertiesForm.site_location,
-                        scene: imagePropertiesForm.scene,
-                        camera_position: imagePropertiesForm.camera_position,
-                        is_rain: imagePropertiesForm.is_rain
-                    },
-                    export_info: {
-                        tool: "Advanced Vehicle Dataset Annotation Tool",
-                        version: "4.16",
-                        exported_at: new Date().toISOString(),
-                        schema_version: "AVC-ANPR-v2.0",
-                        image_index: currentImageIndex + 1,
-                        total_images: imageDirectory.length
-                    }
-                };
-                
+
+                // Save JSON data using new schema
+                const currentImageData = buildExportJson(annotations, imagePropertiesForm);
+
                 const blob = new Blob([JSON.stringify(currentImageData, null, 2)], {
                     type: 'application/json'
                 });
-                
+
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -2399,25 +2562,9 @@
                 
                 const baseFilename = baseName(annotations.image.filename);
 
-                // Save JSON
-				const currentImageData = {
-					...annotations,
-					image: {
-						...annotations.image,
-						image_type: imagePropertiesForm.image_type,
-						site_location: imagePropertiesForm.site_location,
-						scene: imagePropertiesForm.scene,
-						camera_position: imagePropertiesForm.camera_position,
-						is_rain: imagePropertiesForm.is_rain
-					},
-					export_info: {
-						tool: "Advanced Vehicle Dataset Annotation Tool",
-						version: "4.16",
-						exported_at: new Date().toISOString(),
-						schema_version: "AVC-ANPR-v2.0"
-					}
-				};
-                
+                // Save JSON using new schema
+                const currentImageData = buildExportJson(annotations, imagePropertiesForm);
+
                 const jsonSaved = await saveToSelectedDirectory(currentImageData, `${baseFilename}.json`);
                 
                 if (jsonSaved) {
@@ -3274,21 +3421,8 @@
                                                     if (imageData.annotations.objects.length > 0) {
                                                         const baseFilename = baseName(filename);
 
-                                                        // Save JSON
-                                                        const jsonData = {
-                                                            ...imageData.annotations,
-                                                            image: {
-                                                                ...imageData.annotations.image,
-                                                                ...(imageData.imagePropertiesForm || {})
-                                                            },
-                                                            export_info: {
-                                                                tool: "Advanced Vehicle Dataset Annotation Tool",
-                                                                version: "4.16",
-                                                                exported_at: new Date().toISOString(),
-                                                                schema_version: "AVC-ANPR-v2.0",
-                                                                batch_export: true
-                                                            }
-                                                        };
+                                                        // Save JSON using new schema
+                                                        const jsonData = buildExportJson(imageData.annotations, imageData.imagePropertiesForm);
 
                                                         await saveToSelectedDirectory(jsonData, `${baseFilename}.json`);
 
