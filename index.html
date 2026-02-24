@@ -4129,8 +4129,8 @@
                                 </div>
 
                                 {vehicleForm.category === 'Vans' && (
-                                    <div className="form-group">
-                                        <label className="checkbox-item">
+                                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <label className="checkbox-item" style={{ margin: 0, whiteSpace: 'nowrap' }}>
                                             <input
                                                 type="checkbox"
                                                 checked={vehicleForm.is_bus}
@@ -4138,6 +4138,39 @@
                                             />
                                             🚌 Is Bus
                                         </label>
+                                        {vehicleForm.is_bus && (
+                                            <select
+                                                className="input-field input-small"
+                                                style={{ flex: 1, margin: 0 }}
+                                                value={vehicleForm.bus_type}
+                                                onChange={(e) => setVehicleForm(prev => ({ ...prev, bus_type: e.target.value }))}
+                                            >
+                                                <option value="">Bus type…</option>
+                                                <option value="city">City Bus</option>
+                                                <option value="school">School Bus</option>
+                                                <option value="tour">Tour Bus</option>
+                                                <option value="double_decker">Double Decker</option>
+                                                <option value="shuttle">Shuttle</option>
+                                            </select>
+                                        )}
+                                    </div>
+                                )}
+
+                                {vehicleForm.category === 'Bus' && (
+                                    <div className="form-group">
+                                        <label className="form-label">Bus Type</label>
+                                        <select
+                                            className="input-field input-small"
+                                            value={vehicleForm.bus_type}
+                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, bus_type: e.target.value }))}
+                                        >
+                                            <option value="">Select bus type...</option>
+                                            <option value="city">City Bus</option>
+                                            <option value="school">School Bus</option>
+                                            <option value="tour">Tour Bus</option>
+                                            <option value="double_decker">Double Decker</option>
+                                            <option value="shuttle">Shuttle</option>
+                                        </select>
                                     </div>
                                 )}
 
@@ -4352,25 +4385,7 @@
                                     </label>
                                 </div>
 
-                                {vehicleForm.is_bus && (
-                                    <div className="form-group">
-                                        <label className="form-label">Bus Type</label>
-                                        <select
-                                            className="input-field input-small"
-                                            value={vehicleForm.bus_type}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, bus_type: e.target.value }))}
-                                        >
-                                            <option value="">Select bus type...</option>
-                                            <option value="city">City Bus</option>
-                                            <option value="school">School Bus</option>
-                                            <option value="tour">Tour Bus</option>
-                                            <option value="double_decker">Double Decker</option>
-                                            <option value="shuttle">Shuttle</option>
-                                        </select>
-                                    </div>
-                                )}
-                                
-                                <button 
+                                <button
                                     className="btn-secondary"
                                     style={{ 
                                         width: '100%', 
