@@ -3293,7 +3293,7 @@
                                                             is_emergency_vehicle: obj.attributes?.is_emergency_vehicle || false,
                                                             is_electric: obj.attributes?.is_electric || false,
                                                             license_plate_text: obj.license_plate?.text || '',
-                                                            license_plate_country: obj.license_plate?.country || 'MY',
+                                                            license_plate_country: ['MY', 'SG', 'TH', 'ID'].includes(obj.license_plate?.country) ? obj.license_plate.country : '',
                                                             license_plate_format: obj.license_plate?.format || 'License_Plate_Normal',
                                                             license_plate_blurred: obj.license_plate?.blurred || false,
                                                             license_plate_visible: obj.license_plate?.visible !== false,
@@ -4273,7 +4273,7 @@
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Plate Country</label>
-                                        <input
+                                        <select
                                             className="input-field input-small"
                                             value={vehicleForm.license_plate_country}
                                             disabled={!vehicleForm.license_plate_visible}
@@ -4282,7 +4282,13 @@
                                                 backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
                                                 color: !vehicleForm.license_plate_visible ? '#999' : 'black'
                                             }}
-                                        />
+                                        >
+                                            <option value="">Select...</option>
+                                            <option value="MY">MY</option>
+                                            <option value="SG">SG</option>
+                                            <option value="TH">TH</option>
+                                            <option value="ID">ID</option>
+                                        </select>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Plate Format</label>
