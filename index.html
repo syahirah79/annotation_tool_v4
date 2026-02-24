@@ -3288,7 +3288,7 @@
                                                             truck_trailer_labels_visible: obj.mechanical?.truck_trailer_labels_visible || false,
                                                             cargo_present: obj.mechanical?.cargo_present || false,
                                                             is_taxi: obj.attributes?.is_taxi || false,
-                                                            is_bus: obj.attributes?.is_bus || false,
+                                                            is_bus: (obj.vehicle_info?.category === 'Bus') ? true : (obj.attributes?.is_bus || false),
                                                             bus_type: obj.attributes?.bus_type || '',
                                                             is_emergency_vehicle: obj.attributes?.is_emergency_vehicle || false,
                                                             is_electric: obj.attributes?.is_electric || false,
@@ -4094,11 +4094,19 @@
                                         <select
                                             className="input-field input-small"
                                             value={vehicleForm.category}
-                                            onChange={(e) => setVehicleForm(prev => ({
-                                                ...prev,
-                                                category: e.target.value,
-                                                subcategory: ''
-                                            }))}
+                                            onChange={(e) => {
+                                                const newCat = e.target.value;
+                                                setVehicleForm(prev => ({
+                                                    ...prev,
+                                                    category: newCat,
+                                                    subcategory: '',
+                                                    is_bus: newCat === 'Bus'
+                                                        ? true
+                                                        : newCat === 'Vans'
+                                                            ? (prev.is_bus ?? false)
+                                                            : false
+                                                }));
+                                            }}
                                         >
                                             {Object.keys(vehicleCategories).map(cat => (
                                                 <option key={cat} value={cat}>{cat}</option>
@@ -4119,6 +4127,19 @@
                                         </select>
                                     </div>
                                 </div>
+
+                                {vehicleForm.category === 'Vans' && (
+                                    <div className="form-group">
+                                        <label className="checkbox-item">
+                                            <input
+                                                type="checkbox"
+                                                checked={vehicleForm.is_bus}
+                                                onChange={(e) => setVehicleForm(prev => ({ ...prev, is_bus: e.target.checked }))}
+                                            />
+                                            🚌 Is Bus
+                                        </label>
+                                    </div>
+                                )}
 
                                 <div className="form-row">
                                     <div className="form-group">
@@ -4312,14 +4333,6 @@
                                             onChange={(e) => setVehicleForm(prev => ({ ...prev, is_taxi: e.target.checked }))}
                                         />
                                         🚕 Taxi
-                                    </label>
-                                    <label className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            checked={vehicleForm.is_bus}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, is_bus: e.target.checked }))}
-                                        />
-                                        🚌 Bus
                                     </label>
                                     <label className="checkbox-item">
                                         <input
