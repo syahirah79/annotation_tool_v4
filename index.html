@@ -1926,7 +1926,7 @@
 
                         if (child.type === 'license_plate') {
                             lpCount++;
-                            compId = `${vId}_lp_${String(lpCount).padStart(2, '0')}`;
+                            compId = `lp_${String(lpCount).padStart(2, '0')}`;
                             compType = 'license_plate';
                             return {
                                 id: compId,
@@ -1944,7 +1944,7 @@
                         if (child.type === 'wheel' || child.type === 'singleWheel' || child.type === 'doubleWheel') {
                             whlCount++;
                             const wType = (child.wheel_type === 'double' || child.type === 'doubleWheel') ? 'wheel_double' : 'wheel_single';
-                            compId = `${vId}_whl_${String(whlCount).padStart(2, '0')}`;
+                            compId = `whl_${String(whlCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: wType,
@@ -1955,7 +1955,7 @@
 
                         if (child.type === 'made' || child.type === 'make') {
                             mkCount++;
-                            compId = `${vId}_mk_${String(mkCount).padStart(2, '0')}`;
+                            compId = `mk_${String(mkCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'make_logo',
@@ -1967,7 +1967,7 @@
 
                         if (child.type === 'attachment') {
                             otherCount++;
-                            compId = `${vId}_att_${String(otherCount).padStart(2, '0')}`;
+                            compId = `att_${String(otherCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'attachment',
@@ -1978,7 +1978,7 @@
 
                         // Fallback
                         otherCount++;
-                        compId = `${vId}_comp_${String(otherCount).padStart(2, '0')}`;
+                        compId = `comp_${String(otherCount).padStart(2, '0')}`;
                         return {
                             id: compId,
                             type: child.type || 'unknown',
