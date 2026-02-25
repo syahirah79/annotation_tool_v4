@@ -559,7 +559,26 @@
                 { type: 'wheel', icon: '⚙️', label: 'Wheel', color: '#f59e0b' },
                 { type: 'attachment', icon: '🚛', label: 'Attachment', color: '#8b5cf6' },
                 { type: 'make', icon: '\u{1F3F7}', label: 'Make', color: '#ec4899' }
-            ];          
+            ];
+
+            // Normalise a vehicleForm object that may have been saved with the old
+            // flat license_plate_* fields (pre-multi-plate refactor).
+            const normVehicleForm = (vf) => {
+                if (Array.isArray(vf.license_plates) && vf.license_plates.length > 0)
+                    return vf; // already new format
+                const old = {
+                    text:    vf.license_plate_text    || '',
+                    country: ['MY','SG','TH','ID'].includes(vf.license_plate_country) ? vf.license_plate_country : '',
+                    format:  vf.license_plate_format  || 'License_Plate_Normal',
+                    blurred: vf.license_plate_blurred || false,
+                    visible: vf.license_plate_visible !== false
+                };
+                return {
+                    ...vf,
+                    license_plates: [old]
+                };
+            };
+
             const handleImageUpload = (file) => {
                 if (file && file.type.startsWith('image/')) {
                     const reader = new FileReader();
@@ -573,7 +592,7 @@
                             const savedData = imageAnnotationsMap[file.name];
                             if (savedData) {
                                 setAnnotations(savedData.annotations);
-                                setVehicleForm(savedData.vehicleForm);
+                                setVehicleForm(normVehicleForm(savedData.vehicleForm));
                                 if (savedData.imagePropertiesForm) {
                                     setImagePropertiesForm(savedData.imagePropertiesForm);
                                 }
@@ -647,7 +666,7 @@
                         if (savedData) {
                             // Restore saved annotations
                             setAnnotations(savedData.annotations);
-                            setVehicleForm(savedData.vehicleForm);
+                            setVehicleForm(normVehicleForm(savedData.vehicleForm));
                             if (savedData.imagePropertiesForm) {
                                 setImagePropertiesForm(savedData.imagePropertiesForm);
                             }
@@ -1127,7 +1146,7 @@
 				  const savedData = imageAnnotationsMap[imageFile.name];
 				  if (savedData) {
 					setAnnotations(savedData.annotations);
-					setVehicleForm(savedData.vehicleForm);
+					setVehicleForm(normVehicleForm(savedData.vehicleForm));
 					if (savedData.imagePropertiesForm) {
 						setImagePropertiesForm(savedData.imagePropertiesForm);
 					}
@@ -3054,6 +3073,24 @@
                                 ⚡ Example Vehicle
                             </button>                                                        
 
+                            {/* Always-visible storage status — shown even before an image is loaded */}
+                            <div style={{ marginBottom: '8px', padding: '8px 10px', background: Object.keys(imageAnnotationsMap).length > 0 ? '#fef3c7' : '#f1f5f9', borderRadius: '8px', border: `1px solid ${Object.keys(imageAnnotationsMap).length > 0 ? '#fbbf24' : '#cbd5e1'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '11px', color: Object.keys(imageAnnotationsMap).length > 0 ? '#92400e' : '#64748b', fontWeight: 600 }}>
+                                    🗄️ {Object.keys(imageAnnotationsMap).filter(k => imageAnnotationsMap[k].annotations.objects.length > 0).length} image(s) in browser storage
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Clear all saved annotations from browser storage? This cannot be undone.')) {
+                                            localStorage.removeItem('athy_imageAnnotationsMap');
+                                            setImageAnnotationsMap({});
+                                            showTemporaryMessage('🗑️ Cleared browser storage');
+                                        }
+                                    }}
+                                    disabled={Object.keys(imageAnnotationsMap).length === 0}
+                                    style={{ fontSize: '10px', padding: '3px 8px', background: Object.keys(imageAnnotationsMap).length > 0 ? '#ef4444' : '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', cursor: Object.keys(imageAnnotationsMap).length > 0 ? 'pointer' : 'default', fontWeight: 'bold' }}
+                                >🗑️ Clear</button>
+                            </div>
+
                             {image && (
                                 <div style={{ marginBottom: '20px', padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '2px solid #0ea5e9' }}>
                                     <div style={{ fontSize: '12px', color: '#0c4a6e', fontWeight: 'bold', marginBottom: '6px' }}>
@@ -4194,14 +4231,14 @@
                                     🔢 License Plate Information
                                 </div>
 
-                                {vehicleForm.license_plates.map((plate, idx) => (
+                                {(vehicleForm.license_plates ?? [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]).map((plate, idx) => (
                                     <div key={idx} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 12px', marginBottom: '10px', background: '#f8fafc' }}>
                                         {/* Plate header row */}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                             <span style={{ fontWeight: 700, fontSize: '12px', color: '#374151' }}>
                                                 🪪 Plate #{idx + 1}
                                             </span>
-                                            {vehicleForm.license_plates.length > 1 && (
+                                            {(vehicleForm.license_plates ?? []).length > 1 && (
                                                 <button
                                                     style={{ fontSize: '11px', padding: '2px 8px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', lineHeight: '1.5' }}
                                                     onClick={() => setVehicleForm(prev => ({
@@ -4329,7 +4366,7 @@
                                     style={{ width: '100%', padding: '7px 0', marginBottom: '4px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                                     onClick={() => setVehicleForm(prev => ({
                                         ...prev,
-                                        license_plates: [...prev.license_plates, { text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]
+                                        license_plates: [...(prev.license_plates ?? []), { text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]
                                     }))}
                                 >+ Add Plate</button>
 
