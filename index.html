@@ -505,14 +505,9 @@
                 bus_type: '',
                 is_emergency_vehicle: false,
                 is_electric: false,
-                // License plate
-                license_plate_text: '',
-                license_plate_country: 'MY',
-                license_plate_format: 'License_Plate_Normal',
-
-                license_plate_blurred: false,
-                license_plate_visible: true,
-                chainOfThought: []               
+                // License plates (array — supports multiple plates per vehicle)
+                license_plates: [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }],
+                chainOfThought: []
             });
             
             // Add new state: image map, label map, and index
@@ -687,12 +682,7 @@
                                 bus_type: '',
                                 is_emergency_vehicle: false,
                                 is_electric: false,
-                                license_plate_text: '',
-                                license_plate_country: 'MY',
-                                license_plate_format: 'License_Plate_Normal',
-
-                                license_plate_blurred: false,
-                                license_plate_visible: true
+                                license_plates: [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]
                             });
                         }
                         
@@ -1365,14 +1355,7 @@
                             is_emergency_vehicle: vehicleForm.is_emergency_vehicle,
                             is_electric: vehicleForm.is_electric
                         },
-                        license_plate: vehicleForm.license_plate_visible ? {
-                            bbox: [0, 0, 0, 0], // Will be updated when license plate annotation is added
-                            text: vehicleForm.license_plate_text,
-                            country: vehicleForm.license_plate_country,
-                            format: vehicleForm.license_plate_format,
-                            blurred: vehicleForm.license_plate_blurred,
-                            visible: vehicleForm.license_plate_visible
-                        } : null,
+                        license_plates: vehicleForm.license_plates.filter(p => p.text.trim() !== '' || p.blurred || !p.visible),
                         wheels: [],
                         axles: [],
                         attachments: [],
@@ -1474,13 +1457,7 @@
                                     is_emergency_vehicle: vehicleForm.is_emergency_vehicle,
                                     is_electric: vehicleForm.is_electric
                                 },
-                                license_plate: vehicleForm.license_plate_text ? {
-                                    text: vehicleForm.license_plate_text,
-                                    country: vehicleForm.license_plate_country,
-                                    format: vehicleForm.license_plate_format,
-                                    blurred: vehicleForm.license_plate_blurred,
-                                    visible: vehicleForm.license_plate_visible
-                                } : obj.license_plate,
+                                license_plates: vehicleForm.license_plates.filter(p => p.text.trim() !== '' || p.blurred || !p.visible),
                                 // ✅ ENSURE CoT IS SAVED PROPERLY:
                                 CoT: Array.isArray(vehicleForm.chainOfThought) ? vehicleForm.chainOfThought.filter(line => line.trim() !== '') : []
                             };
@@ -2206,8 +2183,10 @@
                         if (obj.type === 'make' && obj.make) {
                             labelText = `MAKE - ${obj.make}`;
                         }
-                        if (obj.license_plate?.text) {
-                            labelText += ` - ${obj.license_plate.text}`;
+                        {
+                            const pts = (obj.license_plates || []).map(p => p.text).filter(Boolean);
+                            if (!pts.length && obj.license_plate?.text) pts.push(obj.license_plate.text);
+                            if (pts.length) labelText += ` - ${pts.join(' / ')}`;
                         }
                         
                         // FIXED: Larger, more visible font
@@ -3292,11 +3271,20 @@
                                                             bus_type: obj.attributes?.bus_type || '',
                                                             is_emergency_vehicle: obj.attributes?.is_emergency_vehicle || false,
                                                             is_electric: obj.attributes?.is_electric || false,
-                                                            license_plate_text: obj.license_plate?.text || '',
-                                                            license_plate_country: ['MY', 'SG', 'TH', 'ID'].includes(obj.license_plate?.country) ? obj.license_plate.country : '',
-                                                            license_plate_format: obj.license_plate?.format || 'License_Plate_Normal',
-                                                            license_plate_blurred: obj.license_plate?.blurred || false,
-                                                            license_plate_visible: obj.license_plate?.visible !== false,
+                                                            license_plates: (() => {
+                                                                const norm = p => ({
+                                                                    text: p.text || '',
+                                                                    country: ['MY', 'SG', 'TH', 'ID'].includes(p.country) ? p.country : '',
+                                                                    format: p.format || 'License_Plate_Normal',
+                                                                    blurred: p.blurred || false,
+                                                                    visible: p.visible !== false
+                                                                });
+                                                                if (Array.isArray(obj.license_plates) && obj.license_plates.length > 0)
+                                                                    return obj.license_plates.map(norm);
+                                                                if (obj.license_plate)
+                                                                    return [norm(obj.license_plate)];
+                                                                return [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }];
+                                                            })(),
                                                             // ✅ FIX THIS LINE TOO:
                                                             chainOfThought: Array.isArray(obj.CoT) ? obj.CoT : []
                                                         });
@@ -3319,9 +3307,7 @@
                                                     </div>
                                                     <div className="annotation-info" style={{ color: '#6c757d' }}>
                                                         {Math.round(obj.bbox[2] - obj.bbox[0])}×{Math.round(obj.bbox[3] - obj.bbox[1])}px
-                                                        {obj.license_plate?.text && (
-                                                            <span> • {obj.license_plate.text}</span>
-                                                        )}
+                                                        {(() => { const pts = (obj.license_plates || []).map(p => p.text).filter(Boolean); if (!pts.length && obj.license_plate?.text) pts.push(obj.license_plate.text); return pts.length ? <span> • {pts.join(' / ')}</span> : null; })()}
                                                     </div>
                                                 </div>
                                                 <button
@@ -4208,109 +4194,144 @@
                                     🔢 License Plate Information
                                 </div>
 
-                                <div className="checkbox-grid">
-                                    <label className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            checked={vehicleForm.license_plate_visible}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setVehicleForm(prev => ({
+                                {vehicleForm.license_plates.map((plate, idx) => (
+                                    <div key={idx} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 12px', marginBottom: '10px', background: '#f8fafc' }}>
+                                        {/* Plate header row */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span style={{ fontWeight: 700, fontSize: '12px', color: '#374151' }}>
+                                                🪪 Plate #{idx + 1}
+                                            </span>
+                                            {vehicleForm.license_plates.length > 1 && (
+                                                <button
+                                                    style={{ fontSize: '11px', padding: '2px 8px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', lineHeight: '1.5' }}
+                                                    onClick={() => setVehicleForm(prev => ({
                                                         ...prev,
-                                                        license_plate_visible: true,
-                                                        license_plate_blurred: false
-                                                    }));
-                                                } else {
-                                                    setVehicleForm(prev => ({
-                                                        ...prev,
-                                                        license_plate_visible: false,
-                                                        license_plate_text: ''
-                                                    }));
-                                                }
-                                            }}
-                                        />
-                                        Visible
-                                    </label>
-                                    <label className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            checked={vehicleForm.license_plate_blurred}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setVehicleForm(prev => ({
-                                                        ...prev,
-                                                        license_plate_blurred: true,
-                                                        license_plate_visible: false,
-                                                        license_plate_text: ''
-                                                    }));
-                                                } else {
-                                                    setVehicleForm(prev => ({
-                                                        ...prev,
-                                                        license_plate_blurred: false
-                                                    }));
-                                                }
-                                            }}
-                                        />
-                                        Blurred
-                                    </label>
-                                </div>
+                                                        license_plates: prev.license_plates.filter((_, i) => i !== idx)
+                                                    }))}
+                                                >✕ Remove</button>
+                                            )}
+                                        </div>
 
-                                <div className="form-group">
-                                    <label className="form-label">License Plate Text</label>
-                                    <input
-                                        className="input-field input-small"
-                                        placeholder={vehicleForm.license_plate_blurred ? "Text unavailable (blurred)" : vehicleForm.license_plate_visible ? "e.g. WXD1023" : "Not visible"}
-                                        value={vehicleForm.license_plate_text}
-                                        disabled={vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible}
-                                        onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_text: e.target.value.toUpperCase() }))}
-                                        style={{
-                                            backgroundColor: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                            color: vehicleForm.license_plate_blurred || !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                        }}
-                                    />
-                                </div>
+                                        {/* Visible / Blurred toggles */}
+                                        <div className="checkbox-grid">
+                                            <label className="checkbox-item">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={plate.visible}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setVehicleForm(prev => ({
+                                                            ...prev,
+                                                            license_plates: prev.license_plates.map((p, i) => i !== idx ? p : {
+                                                                ...p,
+                                                                visible: checked,
+                                                                blurred: checked ? false : p.blurred,
+                                                                text: checked ? p.text : ''
+                                                            })
+                                                        }));
+                                                    }}
+                                                />
+                                                Visible
+                                            </label>
+                                            <label className="checkbox-item">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={plate.blurred}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setVehicleForm(prev => ({
+                                                            ...prev,
+                                                            license_plates: prev.license_plates.map((p, i) => i !== idx ? p : {
+                                                                ...p,
+                                                                blurred: checked,
+                                                                visible: checked ? false : p.visible,
+                                                                text: checked ? '' : p.text
+                                                            })
+                                                        }));
+                                                    }}
+                                                />
+                                                Blurred
+                                            </label>
+                                        </div>
 
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Plate Country</label>
-                                        <select
-                                            className="input-field input-small"
-                                            value={vehicleForm.license_plate_country}
-                                            disabled={!vehicleForm.license_plate_visible}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_country: e.target.value }))}
-                                            style={{
-                                                backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                                color: !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                            }}
-                                        >
-                                            <option value="">Select...</option>
-                                            <option value="MY">MY</option>
-                                            <option value="SG">SG</option>
-                                            <option value="TH">TH</option>
-                                            <option value="ID">ID</option>
-                                        </select>
+                                        {/* Plate Text */}
+                                        <div className="form-group">
+                                            <label className="form-label">Plate Text</label>
+                                            <input
+                                                className="input-field input-small"
+                                                placeholder={plate.blurred ? "Text unavailable (blurred)" : plate.visible ? "e.g. WXD1023" : "Not visible"}
+                                                value={plate.text}
+                                                disabled={plate.blurred || !plate.visible}
+                                                onChange={(e) => setVehicleForm(prev => ({
+                                                    ...prev,
+                                                    license_plates: prev.license_plates.map((p, i) => i !== idx ? p : { ...p, text: e.target.value.toUpperCase() })
+                                                }))}
+                                                style={{
+                                                    backgroundColor: plate.blurred || !plate.visible ? '#f5f5f5' : 'white',
+                                                    color: plate.blurred || !plate.visible ? '#999' : 'black'
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Country + Format */}
+                                        <div className="form-row" style={{ marginBottom: 0 }}>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Plate Country</label>
+                                                <select
+                                                    className="input-field input-small"
+                                                    value={plate.country}
+                                                    disabled={!plate.visible}
+                                                    onChange={(e) => setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plates: prev.license_plates.map((p, i) => i !== idx ? p : { ...p, country: e.target.value })
+                                                    }))}
+                                                    style={{
+                                                        backgroundColor: !plate.visible ? '#f5f5f5' : 'white',
+                                                        color: !plate.visible ? '#999' : 'black'
+                                                    }}
+                                                >
+                                                    <option value="">Select...</option>
+                                                    <option value="MY">MY</option>
+                                                    <option value="SG">SG</option>
+                                                    <option value="TH">TH</option>
+                                                    <option value="ID">ID</option>
+                                                </select>
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Plate Format</label>
+                                                <select
+                                                    className="input-field input-small"
+                                                    value={plate.format}
+                                                    disabled={!plate.visible}
+                                                    onChange={(e) => setVehicleForm(prev => ({
+                                                        ...prev,
+                                                        license_plates: prev.license_plates.map((p, i) => i !== idx ? p : { ...p, format: e.target.value })
+                                                    }))}
+                                                    style={{
+                                                        backgroundColor: !plate.visible ? '#f5f5f5' : 'white',
+                                                        color: !plate.visible ? '#999' : 'black'
+                                                    }}
+                                                >
+                                                    <option value="License_Plate_Normal">License Plate Normal</option>
+                                                    <option value="License_Plate_Taxi">License Plate Taxi</option>
+                                                    <option value="Trailer_Plate">Trailer Plate</option>
+                                                    <option value="Diplomatic_Plate">Diplomatic Plate</option>
+                                                    <option value="Thai_Plate">Thai Plate</option>
+                                                    <option value="EV_Plate">EV Plate</option>
+                                                </select>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Plate Format</label>
-                                        <select
-                                            className="input-field input-small"
-                                            value={vehicleForm.license_plate_format}
-                                            disabled={!vehicleForm.license_plate_visible}
-                                            onChange={(e) => setVehicleForm(prev => ({ ...prev, license_plate_format: e.target.value }))}
-                                            style={{
-                                                backgroundColor: !vehicleForm.license_plate_visible ? '#f5f5f5' : 'white',
-                                                color: !vehicleForm.license_plate_visible ? '#999' : 'black'
-                                            }}
-                                        >
-                                            <option value="License_Plate_Normal">License Plate Normal</option>
-                                            <option value="License_Plate_Taxi">License Plate Taxi</option>
-                                            <option value="Trailer_Plate">Trailer Plate</option>
-                                            <option value="Diplomatic_Plate">Diplomatic Plate</option>
-                                            <option value="Thai_Plate">Thai Plate</option>
-                                            <option value="EV_Plate">EV Plate</option>
-                                        </select>
-                                    </div>
-                                </div>
+                                ))}
+
+                                {/* Add Plate button */}
+                                <button
+                                    style={{ width: '100%', padding: '7px 0', marginBottom: '4px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                                    onClick={() => setVehicleForm(prev => ({
+                                        ...prev,
+                                        license_plates: [...prev.license_plates, { text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]
+                                    }))}
+                                >+ Add Plate</button>
 
                                 {/* Mechanical Properties */}
                                 <div className="section-header">
@@ -4434,12 +4455,7 @@
                                                 bus_type: '',
                                                 is_emergency_vehicle: false,
                                                 is_electric: false,
-                                                license_plate_text: '',
-                                                license_plate_country: 'MY',
-                                                license_plate_format: 'License_Plate_Normal',
-
-                                                license_plate_blurred: false,
-                                                license_plate_visible: true
+                                                license_plates: [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }]
                                             });
                                         }}
                                     >
@@ -5051,9 +5067,7 @@
                                                         }}>
                                                             {Math.round(obj.bbox[2] - obj.bbox[0])}×{Math.round(obj.bbox[3] - obj.bbox[1])}px
 
-                                                            {obj.license_plate?.text && (
-                                                                <span> • {obj.license_plate.text}</span>
-                                                            )}
+                                                            {(() => { const pts = (obj.license_plates || []).map(p => p.text).filter(Boolean); if (!pts.length && obj.license_plate?.text) pts.push(obj.license_plate.text); return pts.length ? <span> • {pts.join(' / ')}</span> : null; })()}
                                                         </div>
                                                     </div>
                                                     <button
