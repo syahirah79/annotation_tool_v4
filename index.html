@@ -3561,8 +3561,12 @@
                                     
 
 
-                                    {/* Render existing bounding boxes */}
-                                    {annotations.objects.map(obj => {
+                                    {/* Render existing bounding boxes — sorted largest-first so smaller boxes sit on top in DOM order */}
+                                    {[...annotations.objects].sort((a, b) => {
+                                        const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
+                                        const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
+                                        return areaB - areaA;
+                                    }).map(obj => {
                                         if (!imageRef.current) return null;
                                         
                                         // Use appropriate container based on mode
@@ -3597,7 +3601,7 @@
                                                     width: `${width}px`,
                                                     height: `${height}px`,
                                                     position: 'absolute',
-                                                    zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
+                                                    zIndex: isSelected ? 1000 : 1,
 
                                                     cursor: isDrawing ? 'crosshair' : 'move',
                                                     pointerEvents: isDrawing ? 'none' : 'auto'
@@ -4877,8 +4881,12 @@
                                             draggable={false}
                                         />
                                         
-                                        {/* Render existing bounding boxes in fullscreen */}
-                                        {annotations.objects.map(obj => {
+                                        {/* Render existing bounding boxes in fullscreen — sorted largest-first so smaller boxes sit on top in DOM order */}
+                                        {[...annotations.objects].sort((a, b) => {
+                                            const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
+                                            const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
+                                            return areaB - areaA;
+                                        }).map(obj => {
                                             if (!imageRef.current || !fullscreenContainerRef.current) return null;
 
                                             
@@ -4909,7 +4917,7 @@
                                                         width: `${width}px`,
                                                         height: `${height}px`,
                                                         position: 'absolute',
-                                                        zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
+                                                        zIndex: isSelected ? 1000 : 1,
 
                                                         cursor: isDrawing ? 'crosshair' : 'move',
                                                         pointerEvents: isDrawing ? 'none' : 'auto'
