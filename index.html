@@ -1886,10 +1886,10 @@
                 const imgMeta = annots.image || {};
                 const props = imgPropsForm || {};
 
-                // Helper: convert [x1,y1,x2,y2] → {x,y,w,h}
+                // Helper: convert [x1,y1,x2,y2] → [x,y,w,h]
                 const bboxToXYWH = (b) => {
                     if (!b || b.length < 4) return null;
-                    return { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] };
+                    return [b[0], b[1], b[2] - b[0], b[3] - b[1]];
                 };
 
                 // Helper: check if child bbox is inside parent bbox
@@ -1901,13 +1901,13 @@
                     return cx >= parent[0] && cx <= parent[2] && cy >= parent[1] && cy <= parent[3];
                 };
 
-                // 1. Identify all vehicles and assign vhcl_XX IDs
+                // 1. Identify all vehicles and assign vehicle_XX IDs
                 const vehicles = objs.filter(o => o.type === 'vehicle');
                 const nonVehicles = objs.filter(o => o.type !== 'vehicle');
 
                 // 2. Build output vehicles with components
                 const outputVehicles = vehicles.map((veh, idx) => {
-                    const vId = `vhcl_${String(idx + 1).padStart(2, '0')}`;
+                    const vId = `vehicle_${String(idx + 1).padStart(2, '0')}`;
 
                     // Find children: non-vehicle objects whose bbox center is inside this vehicle's bbox
                     // Also respect explicit parent_id if already set
@@ -1919,6 +1919,8 @@
                     });
 
                     // Build components with proper IDs
+                    // veh.license_plates[] is used to match form data to each plate bbox by order
+                    const vehPlates = Array.isArray(veh.license_plates) ? veh.license_plates : [];
                     let lpCount = 0, whlCount = 0, mkCount = 0, otherCount = 0;
                     const components = children.map(child => {
                         let compId, compType;
@@ -1926,25 +1928,27 @@
 
                         if (child.type === 'license_plate') {
                             lpCount++;
-                            compId = `lp_${String(lpCount).padStart(2, '0')}`;
+                            compId = `licenseplate_${String(lpCount).padStart(2, '0')}`;
                             compType = 'license_plate';
+                            // Match form data by order: 1st plate bbox → vehPlates[0], etc.
+                            const plateData = vehPlates[lpCount - 1] || {};
                             return {
                                 id: compId,
                                 type: compType,
                                 parent_id: vId,
                                 bbox: childBbox,
-                                text: child.license_plate?.text || child.text || null,
-                                country: child.license_plate?.country || child.country || null,
-                                format: child.license_plate?.format || child.format || null,
-                                blurred: child.license_plate?.blurred ?? child.blurred ?? false,
-                                visible: child.license_plate?.visible ?? child.visible ?? true
+                                text: plateData.text || child.text || null,
+                                country: plateData.country || child.country || null,
+                                format: plateData.format || child.format || null,
+                                blurred: plateData.blurred ?? child.blurred ?? false,
+                                visible: plateData.visible ?? child.visible ?? true
                             };
                         }
 
                         if (child.type === 'wheel' || child.type === 'singleWheel' || child.type === 'doubleWheel') {
                             whlCount++;
                             const wType = (child.wheel_type === 'double' || child.type === 'doubleWheel') ? 'wheel_double' : 'wheel_single';
-                            compId = `whl_${String(whlCount).padStart(2, '0')}`;
+                            compId = `wheel_${String(whlCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: wType,
@@ -1955,7 +1959,7 @@
 
                         if (child.type === 'made' || child.type === 'make') {
                             mkCount++;
-                            compId = `mk_${String(mkCount).padStart(2, '0')}`;
+                            compId = `make_${String(mkCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'make_logo',
@@ -1967,7 +1971,7 @@
 
                         if (child.type === 'attachment') {
                             otherCount++;
-                            compId = `att_${String(otherCount).padStart(2, '0')}`;
+                            compId = `attach_${String(otherCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'attachment',
@@ -1978,7 +1982,7 @@
 
                         // Fallback
                         otherCount++;
-                        compId = `comp_${String(otherCount).padStart(2, '0')}`;
+                        compId = `component_${String(otherCount).padStart(2, '0')}`;
                         return {
                             id: compId,
                             type: child.type || 'unknown',
@@ -2064,8 +2068,6 @@
 
                 // 4. Build final output
                 return {
-                    schema_name: "imap_annotation_v1",
-                    source_template: "template_01.json (modified)",
                     image_metadata: {
                         image_id: null,
                         filename: imgMeta.filename || null,
@@ -2084,8 +2086,7 @@
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
                         version: "4.16",
-                        exported_at: new Date().toISOString(),
-                        schema_name: "imap_annotation_v1"
+                        exported_at: new Date().toISOString()
                     }
                 };
             };
