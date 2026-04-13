@@ -519,6 +519,13 @@
 			const [yoloFiles, setYoloFiles] = React.useState([]);          // array<File>
 			const [yoloByBase, setYoloByBase] = React.useState({});        // { baseName: { text, fileName } }
 
+			// JSON labels
+			const [jsonFiles, setJsonFiles] = React.useState([]);          // array<File>
+			const [jsonByBase, setJsonByBase] = React.useState({});        // { baseName: { text, fileName } }
+
+			// 'auto' | 'yolo' | 'json'
+			const [preferredLabelFormat, setPreferredLabelFormat] = React.useState('auto');
+
 			const [datasetIndex, setDatasetIndex] = React.useState([]);    // array of rows for UI + navigation
 			const [currentBase, setCurrentBase] = React.useState(null);    // which baseName is “active”
             
@@ -758,13 +765,15 @@
 			// ------------------------------
 			// Dataset index helpers (Images + Labels)
 			// ------------------------------
-			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase } = {}) => {
+			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase, nextJsonByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
-				const yoloLabels = nextYoloByBase ?? yoloByBase;     // YOLO txt labels
+				const yoloLabels = nextYoloByBase ?? yoloByBase;
+				const jsonLabels = nextJsonByBase ?? jsonByBase;
 
 				const bases = new Set([
 					...Object.keys(imgs),
 					...Object.keys(yoloLabels),
+					...Object.keys(jsonLabels),
 				]);
 
 				const rows = Array.from(bases)
@@ -772,22 +781,25 @@
 					.map((b) => {
 						const img = imgs[b] || null;
 						const yoloLab = yoloLabels[b] || null;
+						const jsonLab = jsonLabels[b] || null;
 
 						const hasYolo = !!yoloLab;
+						const hasJson = !!jsonLab;
 
 						let status = "image_only";
-						if (!img && hasYolo) status = "label_only";
+						if (!img && (hasYolo || hasJson)) status = "label_only";
+						else if (img && hasYolo && hasJson) status = "paired_both";
 						else if (img && hasYolo) status = "paired_yolo";
+						else if (img && hasJson) status = "paired_json";
 
 						return {
 							base: b,
 							hasImage: !!img,
-
 							hasYolo,
-
+							hasJson,
 							imageName: img?.name ?? "",
 							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`) : "",
-
+							jsonLabelName: hasJson ? (jsonLab.fileName ?? `${b}.json`) : "",
 							status,
 						};
 					});
@@ -835,9 +847,10 @@
 				return firstUnlabelled ?? imgBases[0];
 			};
 
-			const openByBase = (base, { nextImageByBase, nextYoloByBase } = {}) => {
+			const openByBase = (base, { nextImageByBase, nextYoloByBase, nextJsonByBase } = {}) => {
 				const imgs = nextImageByBase ?? imageByBase;
 				const yoloLabels = nextYoloByBase ?? yoloByBase;
+				const jsonLabels = nextJsonByBase ?? jsonByBase;
 
 				const imgFile = imgs[base];
 				if (!imgFile) {
@@ -848,10 +861,18 @@
 				setCurrentBase(base);
 
 				const yoloLab = yoloLabels[base] || null;
+				const jsonLab = jsonLabels[base] || null;
 
-				if (yoloLab) {
-					loadImageWithYolo(imgFile, yoloLab);
-					return;
+				if (preferredLabelFormat === 'json') {
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
+					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
+				} else if (preferredLabelFormat === 'yolo') {
+					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
+				} else {
+					// auto: prefer JSON (richer data), then YOLO
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
+					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
 				}
 
 				// No labels found
@@ -1174,7 +1195,182 @@
 			  reader.readAsDataURL(imageFile);
 			};
 
-			
+			// JSON folder handler
+			const handleJsonDirectorySelect = async (e) => {
+				const files = e.target.files;
+				if (!files || files.length === 0) return;
+
+				const jsonFilesList = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
+				if (jsonFilesList.length === 0) {
+					alert("No .json files found in the selected folder!");
+					return;
+				}
+
+				setJsonFiles(jsonFilesList);
+
+				const pairs = await Promise.all(jsonFilesList.map(async (f) => {
+					try {
+						const text = await f.text();
+						const b = baseName(f.name);
+						return [b, { text, fileName: f.name }];
+					} catch (err) {
+						console.warn("Failed reading JSON:", f.name, err);
+						return null;
+					}
+				}));
+
+				const next = {};
+				for (const p of pairs) {
+					if (!p) continue;
+					const [b, data] = p;
+					next[b] = data;
+				}
+
+				setJsonByBase(next);
+				rebuildDatasetIndex({ nextJsonByBase: next });
+			};
+
+			// Reverse of buildExportJson: parse exported JSON → internal annotations format
+			const parseJsonToAnnotations = (jsonData) => {
+				const xywhToX1Y1X2Y2 = (b) => {
+					if (!b || b.length < 4) return null;
+					return [b[0], b[1], b[0] + b[2], b[1] + b[3]];
+				};
+
+				const meta = jsonData.image_metadata || {};
+				const vehicles = jsonData.vehicles || [];
+				const orphans = jsonData.unassigned_components || [];
+				const objects = [];
+
+				vehicles.forEach((veh, vi) => {
+					const vehicleBbox = xywhToX1Y1X2Y2(veh.bbox);
+					if (!vehicleBbox) return;
+
+					const bi = veh.basic_information || {};
+					const mech = veh.mechanical_properties || {};
+					const attrs = veh.vehicle_attributes || {};
+
+					objects.push({
+						id: veh.id || `json_v_${vi}`,
+						type: 'vehicle',
+						bbox: vehicleBbox,
+						direction: bi.direction || 'Northbound',
+						vehicle_info: {
+							category: bi.category || 'Car',
+							subcategory: bi.subcategory || '',
+							country: bi.country || 'MY',
+							make: bi.make || '',
+							model: bi.model || '',
+							color: bi.colour || ''
+						},
+						mechanical: {
+							number_of_axles_inferred: mech.axles_inferred ?? 2,
+							number_of_axles_raised: mech.raised_axles ? 1 : 0,
+							truck_trailer_labels_visible: mech.truck_trailer_labels_visible ?? false,
+							cargo_present: mech.cargo_present ?? false
+						},
+						attributes: {
+							is_taxi: attrs.is_taxi ?? false,
+							is_bus: attrs.is_bus ?? false,
+							bus_type: attrs.bus_type || '',
+							is_emergency_vehicle: attrs.is_emergency_vehicle ?? false,
+							is_electric: attrs.is_electric ?? false
+						},
+						license_plates: [],
+						wheels: [],
+						axles: [],
+						attachments: [],
+						CoT: veh.CoT || []
+					});
+
+					(veh.components || []).forEach((comp, ci) => {
+						const compBbox = xywhToX1Y1X2Y2(comp.bbox);
+						if (!compBbox) return;
+						let type = comp.type;
+						if (type === 'license_plate' || type === 'license_plate_taxi') type = 'license_plate';
+						else if (type === 'wheel_single') type = 'singleWheel';
+						else if (type === 'wheel_double') type = 'doubleWheel';
+						else if (type === 'make_logo') type = 'make';
+						objects.push({
+							id: comp.id || `json_c_${vi}_${ci}`,
+							type,
+							bbox: compBbox,
+							parent_id: veh.id || `json_v_${vi}`,
+							...(comp.text ? { text: comp.text } : {}),
+							...(comp.brand ? { make: comp.brand } : {})
+						});
+					});
+				});
+
+				orphans.forEach((orphan, oi) => {
+					const orphBbox = xywhToX1Y1X2Y2(orphan.bbox);
+					if (!orphBbox) return;
+					let type = orphan.type;
+					if (type === 'license_plate' || type === 'license_plate_taxi') type = 'license_plate';
+					else if (type === 'wheel_single') type = 'singleWheel';
+					else if (type === 'wheel_double') type = 'doubleWheel';
+					else if (type === 'make_logo') type = 'make';
+					objects.push({
+						id: orphan.id || `json_o_${oi}`,
+						type: type || 'vehicle',
+						bbox: orphBbox,
+						parent_id: null
+					});
+				});
+
+				return {
+					image: {
+						filename: meta.filename || '',
+						width: meta.width || 0,
+						height: meta.height || 0,
+						timestamp: meta.timestamp || new Date().toISOString()
+					},
+					objects
+				};
+			};
+
+			const loadImageWithJson = (imageFile, jsonData) => {
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					const img = new Image();
+					img.onload = () => {
+						setImage(imageFile);
+						setImagePreview(e.target.result);
+
+						const savedData = imageAnnotationsMap[imageFile.name];
+						if (savedData) {
+							setAnnotations(savedData.annotations);
+							setVehicleForm(normVehicleForm(savedData.vehicleForm));
+							if (savedData.imagePropertiesForm) setImagePropertiesForm(savedData.imagePropertiesForm);
+							showTemporaryMessage(`📂 Restored ${savedData.annotations.objects.length} annotations\n${imageFile.name}`);
+						} else {
+							try {
+								const parsed = JSON.parse(jsonData.text);
+								const annots = parseJsonToAnnotations(parsed);
+								if (!annots.image.width) annots.image.width = img.width;
+								if (!annots.image.height) annots.image.height = img.height;
+								if (!annots.image.filename) annots.image.filename = imageFile.name;
+								setAnnotations(annots);
+								showTemporaryMessage(`✅ Loaded JSON: ${annots.objects.length} objects\n${jsonData.fileName}`);
+							} catch (err) {
+								console.error('Failed to parse JSON annotation:', err);
+								setAnnotations({
+									image: { filename: imageFile.name, width: img.width, height: img.height, timestamp: new Date().toISOString() },
+									objects: []
+								});
+								showTemporaryMessage(`❌ Failed to parse JSON: ${jsonData.fileName}`);
+							}
+						}
+
+						setSelectedAnnotation(null);
+						setIsDrawing(false);
+					};
+					img.src = e.target.result;
+				};
+				reader.readAsDataURL(imageFile);
+			};
+
+
             const handleDragOver = (e) => {
                 e.preventDefault();
                 setIsDragging(true);
@@ -2898,6 +3094,77 @@
 								  </div>
 								</div>
 
+								{/* JSON Labels Folder Upload */}
+								<div style={{ marginBottom: '8px', padding: '8px', background: '#fdf4ff', borderRadius: '6px', border: '1px solid #c026d3' }}>
+								  <div style={{ fontSize: '10px', color: '#86198f', marginBottom: '4px', fontWeight: 'bold' }}>
+									📋 Labels Folder (JSON)
+								  </div>
+								  <div style={{ position: 'relative' }}>
+									<input
+									  type="file"
+									  webkitdirectory="true"
+									  directory="true"
+									  multiple
+									  accept=".json,application/json"
+									  onChange={handleJsonDirectorySelect}
+									  style={{ opacity: 0, position: 'absolute', zIndex: -1 }}
+									  id="json-directory-input"
+									/>
+									<label
+									  htmlFor="json-directory-input"
+									  className="input-field"
+									  style={{
+										display: 'block',
+										cursor: 'pointer',
+										textAlign: 'center',
+										backgroundColor: 'white',
+										border: '2px dashed #c026d3',
+										color: '#86198f',
+										padding: '6px 8px',
+										fontSize: '11px'
+									  }}
+									>
+									  {jsonFiles.length > 0 ? `📋 ${jsonFiles.length} JSONs` : '📋 Choose JSON Labels Folder'}
+									</label>
+								  </div>
+								</div>
+
+								{/* Label Format Selector */}
+								<div style={{ marginBottom: '8px', padding: '8px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #f59e0b' }}>
+								  <div style={{ fontSize: '10px', color: '#92400e', marginBottom: '6px', fontWeight: 'bold' }}>
+									⚙️ Pair Images With
+								  </div>
+								  <div style={{ display: 'flex', gap: '4px' }}>
+									{[
+									  { value: 'auto', label: 'Auto', title: 'Prefer JSON, fallback to YOLO' },
+									  { value: 'json', label: 'JSON', title: 'Always use JSON labels' },
+									  { value: 'yolo', label: 'YOLO', title: 'Always use YOLO labels' }
+									].map(opt => (
+									  <button
+										key={opt.value}
+										title={opt.title}
+										onClick={() => setPreferredLabelFormat(opt.value)}
+										style={{
+										  flex: 1,
+										  padding: '4px 6px',
+										  fontSize: '11px',
+										  fontWeight: 'bold',
+										  border: 'none',
+										  borderRadius: '6px',
+										  cursor: 'pointer',
+										  background: preferredLabelFormat === opt.value
+										    ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+										    : '#f3f4f6',
+										  color: preferredLabelFormat === opt.value ? 'white' : '#374151',
+										  transition: 'all 0.2s'
+										}}
+									  >
+										{opt.label}
+									  </button>
+									))}
+								  </div>
+								</div>
+
 								
 								{/* Dataset Index */}
 								<div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -2926,8 +3193,8 @@
 									<div style={{ fontSize: '10px', color: '#374151', marginBottom: '8px' }}>
 										Images: <b>{Object.keys(imageByBase).length}</b>
 										{" | "}YOLO: <b>{Object.keys(yoloByBase).length}</b>
-										{" | "}Paired(YOLO): <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
-
+										{" | "}JSON: <b>{Object.keys(jsonByBase).length}</b>
+										{" | "}Paired: <b>{datasetIndex.filter(r => r.status === 'paired_yolo' || r.status === 'paired_json' || r.status === 'paired_both').length}</b>
 									</div>
 
 									<div className="scrollable-panel" style={{ maxHeight: '220px', paddingRight: '6px' }}>
@@ -2948,13 +3215,13 @@
 													}}
 												>
 													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-														{row.status === 'paired_yolo' ? '✅Y' : '🟡'}
+														{row.status === 'paired_both' ? '✅YJ' : row.status === 'paired_yolo' ? '✅Y' : row.status === 'paired_json' ? '✅J' : '🟡'}
 													</div>
 													<div style={{ fontSize: '10px', color: '#6b7280' }}>
 														{row.imageName}
 														{row.hasYolo ? ` • ${row.yoloLabelName}` : ''}
-														{!row.hasYolo ? ' • (no label)' : ''}
-
+														{row.hasJson ? ` • ${row.jsonLabelName}` : ''}
+														{!row.hasYolo && !row.hasJson ? ' • (no label)' : ''}
 													</div>
 												</div>
 											))
