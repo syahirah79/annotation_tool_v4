@@ -519,6 +519,16 @@
 			const [yoloFiles, setYoloFiles] = React.useState([]);          // array<File>
 			const [yoloByBase, setYoloByBase] = React.useState({});        // { baseName: { text, fileName } }
 
+			// JSON labels
+			const [jsonFiles, setJsonFiles] = React.useState([]);          // array<File>
+			const [jsonByBase, setJsonByBase] = React.useState({});        // { baseName: { text, fileName } }
+
+			// 'auto' | 'json' | 'yolo'  — which label source to prefer when opening an image
+			const [preferredLabelFormat, setPreferredLabelFormat] = React.useState('auto');
+
+			// 'json' | 'yolo' | 'both' | null — drives bbox border tint on canvas
+			const [annotationsSource, setAnnotationsSource] = React.useState(null);
+
 			const [datasetIndex, setDatasetIndex] = React.useState([]);    // array of rows for UI + navigation
 			const [currentBase, setCurrentBase] = React.useState(null);    // which baseName is “active”
             
@@ -758,37 +768,50 @@
 			// ------------------------------
 			// Dataset index helpers (Images + Labels)
 			// ------------------------------
-			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase } = {}) => {
-				const imgs = nextImageByBase ?? imageByBase;
-				const yoloLabels = nextYoloByBase ?? yoloByBase;     // YOLO txt labels
+			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase, nextJsonByBase } = {}) => {
+				const imgs        = nextImageByBase ?? imageByBase;
+				const yoloLabels  = nextYoloByBase  ?? yoloByBase;
+				const jsonLabels  = nextJsonByBase  ?? jsonByBase;
 
 				const bases = new Set([
 					...Object.keys(imgs),
 					...Object.keys(yoloLabels),
+					...Object.keys(jsonLabels),
 				]);
 
 				const rows = Array.from(bases)
 					.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
 					.map((b) => {
-						const img = imgs[b] || null;
-						const yoloLab = yoloLabels[b] || null;
+						const img      = imgs[b]       || null;
+						const yoloLab  = yoloLabels[b] || null;
+						const jsonLab  = jsonLabels[b] || null;
 
 						const hasYolo = !!yoloLab;
+						const hasJson = !!jsonLab;
 
 						let status = "image_only";
-						if (!img && hasYolo) status = "label_only";
-						else if (img && hasYolo) status = "paired_yolo";
+						if (!img && (hasYolo || hasJson)) status = "label_only";
+						else if (img && hasYolo && hasJson) status = "paired_both";
+						else if (img && hasYolo)            status = "paired_yolo";
+						else if (img && hasJson)            status = "paired_json";
+
+						// Badge: 🟢 both  🩷 json-only  🔴 yolo-only  🟡 image-only
+						const badge =
+							status === 'paired_both' ? { icon: '🟢', label: 'Y+J' } :
+							status === 'paired_yolo' ? { icon: '🔴', label: 'Y'   } :
+							status === 'paired_json' ? { icon: '🩷', label: 'J'   } :
+							                           { icon: '🟡', label: '—'   };
 
 						return {
 							base: b,
 							hasImage: !!img,
-
 							hasYolo,
-
-							imageName: img?.name ?? "",
-							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`) : "",
-
+							hasJson,
+							imageName:     img?.name    ?? "",
+							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`)  : "",
+							jsonLabelName: hasJson ? (jsonLab.fileName ?? `${b}.json`) : "",
 							status,
+							badge,
 						};
 					});
 
@@ -1078,12 +1101,45 @@
 			  }
 
 			  setYoloByBase(next);
-
-			  // update dataset index (we'll update rebuildDatasetIndex in step 4)
 			  rebuildDatasetIndex({ nextYoloByBase: next });
 			};
 
-			
+			// JSON folder handler — reads all .json files, indexes by basename
+			const handleJsonDirectorySelect = async (e) => {
+			  const files = e.target.files;
+			  if (!files || files.length === 0) return;
+
+			  const jsonFilesList = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
+			  if (jsonFilesList.length === 0) {
+				alert("No .json files found in the selected folder!");
+				return;
+			  }
+
+			  setJsonFiles(jsonFilesList);
+
+			  const pairs = await Promise.all(jsonFilesList.map(async (f) => {
+				try {
+				  const text = await f.text();
+				  const b = baseName(f.name);
+				  return [b, { text, fileName: f.name }];
+				} catch (err) {
+				  console.warn("Failed reading JSON:", f.name, err);
+				  return null;
+				}
+			  }));
+
+			  const next = {};
+			  for (const p of pairs) {
+				if (!p) continue;
+				const [b, data] = p;
+				next[b] = data;
+			  }
+
+			  setJsonByBase(next);
+			  rebuildDatasetIndex({ nextJsonByBase: next });
+			};
+
+
 			const parseYoloTxtToObjects = (txt, imgW, imgH) => {
 			  const lines = (txt || "")
 				.split(/\r?\n/)
@@ -1886,10 +1942,10 @@
                 const imgMeta = annots.image || {};
                 const props = imgPropsForm || {};
 
-                // Helper: convert [x1,y1,x2,y2] → [x,y,w,h]
+                // Helper: convert [x1,y1,x2,y2] → {x,y,w,h}
                 const bboxToXYWH = (b) => {
                     if (!b || b.length < 4) return null;
-                    return [b[0], b[1], b[2] - b[0], b[3] - b[1]];
+                    return { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] };
                 };
 
                 // Helper: check if child bbox is inside parent bbox
@@ -1901,13 +1957,13 @@
                     return cx >= parent[0] && cx <= parent[2] && cy >= parent[1] && cy <= parent[3];
                 };
 
-                // 1. Identify all vehicles and assign vehicle_XX IDs
+                // 1. Identify all vehicles and assign vhcl_XX IDs
                 const vehicles = objs.filter(o => o.type === 'vehicle');
                 const nonVehicles = objs.filter(o => o.type !== 'vehicle');
 
                 // 2. Build output vehicles with components
                 const outputVehicles = vehicles.map((veh, idx) => {
-                    const vId = `vehicle_${String(idx + 1).padStart(2, '0')}`;
+                    const vId = `vhcl_${String(idx + 1).padStart(2, '0')}`;
 
                     // Find children: non-vehicle objects whose bbox center is inside this vehicle's bbox
                     // Also respect explicit parent_id if already set
@@ -1919,8 +1975,6 @@
                     });
 
                     // Build components with proper IDs
-                    // veh.license_plates[] is used to match form data to each plate bbox by order
-                    const vehPlates = Array.isArray(veh.license_plates) ? veh.license_plates : [];
                     let lpCount = 0, whlCount = 0, mkCount = 0, otherCount = 0;
                     const components = children.map(child => {
                         let compId, compType;
@@ -1928,27 +1982,25 @@
 
                         if (child.type === 'license_plate') {
                             lpCount++;
-                            compId = `licenseplate_${String(lpCount).padStart(2, '0')}`;
+                            compId = `${vId}_lp_${String(lpCount).padStart(2, '0')}`;
                             compType = 'license_plate';
-                            // Match form data by order: 1st plate bbox → vehPlates[0], etc.
-                            const plateData = vehPlates[lpCount - 1] || {};
                             return {
                                 id: compId,
                                 type: compType,
                                 parent_id: vId,
                                 bbox: childBbox,
-                                text: plateData.text || child.text || null,
-                                country: plateData.country || child.country || null,
-                                format: plateData.format || child.format || null,
-                                blurred: plateData.blurred ?? child.blurred ?? false,
-                                visible: plateData.visible ?? child.visible ?? true
+                                text: child.license_plate?.text || child.text || null,
+                                country: child.license_plate?.country || child.country || null,
+                                format: child.license_plate?.format || child.format || null,
+                                blurred: child.license_plate?.blurred ?? child.blurred ?? false,
+                                visible: child.license_plate?.visible ?? child.visible ?? true
                             };
                         }
 
                         if (child.type === 'wheel' || child.type === 'singleWheel' || child.type === 'doubleWheel') {
                             whlCount++;
                             const wType = (child.wheel_type === 'double' || child.type === 'doubleWheel') ? 'wheel_double' : 'wheel_single';
-                            compId = `wheel_${String(whlCount).padStart(2, '0')}`;
+                            compId = `${vId}_whl_${String(whlCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: wType,
@@ -1959,7 +2011,7 @@
 
                         if (child.type === 'made' || child.type === 'make') {
                             mkCount++;
-                            compId = `make_${String(mkCount).padStart(2, '0')}`;
+                            compId = `${vId}_mk_${String(mkCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'make_logo',
@@ -1971,7 +2023,7 @@
 
                         if (child.type === 'attachment') {
                             otherCount++;
-                            compId = `attach_${String(otherCount).padStart(2, '0')}`;
+                            compId = `${vId}_att_${String(otherCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'attachment',
@@ -1982,7 +2034,7 @@
 
                         // Fallback
                         otherCount++;
-                        compId = `component_${String(otherCount).padStart(2, '0')}`;
+                        compId = `${vId}_comp_${String(otherCount).padStart(2, '0')}`;
                         return {
                             id: compId,
                             type: child.type || 'unknown',
@@ -2068,6 +2120,8 @@
 
                 // 4. Build final output
                 return {
+                    schema_name: "imap_annotation_v1",
+                    source_template: "template_01.json (modified)",
                     image_metadata: {
                         image_id: null,
                         filename: imgMeta.filename || null,
@@ -2086,7 +2140,8 @@
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
                         version: "4.16",
-                        exported_at: new Date().toISOString()
+                        exported_at: new Date().toISOString(),
+                        schema_name: "imap_annotation_v1"
                     }
                 };
             };
@@ -2898,7 +2953,77 @@
 								  </div>
 								</div>
 
-								
+								{/* JSON Labels Folder Upload */}
+								<div style={{ marginBottom: '8px', padding: '8px', background: '#fdf4ff', borderRadius: '6px', border: '1px solid #c026d3' }}>
+								  <div style={{ fontSize: '10px', color: '#86198f', marginBottom: '4px', fontWeight: 'bold' }}>
+									📋 Labels Folder (JSON)
+								  </div>
+								  <div style={{ position: 'relative' }}>
+									<input
+									  type="file"
+									  webkitdirectory="true"
+									  directory="true"
+									  multiple
+									  accept=".json,application/json"
+									  onChange={handleJsonDirectorySelect}
+									  style={{ opacity: 0, position: 'absolute', zIndex: -1 }}
+									  id="json-directory-input"
+									/>
+									<label
+									  htmlFor="json-directory-input"
+									  className="input-field"
+									  style={{
+										display: 'block',
+										cursor: 'pointer',
+										textAlign: 'center',
+										backgroundColor: 'white',
+										border: '2px dashed #c026d3',
+										color: '#86198f',
+										padding: '6px 8px',
+										fontSize: '11px'
+									  }}
+									>
+									  {jsonFiles.length > 0 ? `📋 ${jsonFiles.length} JSONs` : '📋 Choose JSON Labels Folder'}
+									</label>
+								  </div>
+								</div>
+
+								{/* Label Format Preference Selector */}
+								<div style={{ marginBottom: '8px', padding: '8px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #f59e0b' }}>
+								  <div style={{ fontSize: '10px', color: '#92400e', marginBottom: '6px', fontWeight: 'bold' }}>
+									⚙️ Pair Images With
+								  </div>
+								  <div style={{ display: 'flex', gap: '4px' }}>
+									{[
+									  { value: 'auto', label: 'Auto',  title: 'Prefer JSON, fallback to YOLO' },
+									  { value: 'json', label: 'JSON',  title: 'Always use JSON labels' },
+									  { value: 'yolo', label: 'YOLO',  title: 'Always use YOLO labels' }
+									].map(opt => (
+									  <button
+										key={opt.value}
+										title={opt.title}
+										onClick={() => setPreferredLabelFormat(opt.value)}
+										style={{
+										  flex: 1,
+										  padding: '4px 6px',
+										  fontSize: '11px',
+										  fontWeight: 'bold',
+										  border: 'none',
+										  borderRadius: '6px',
+										  cursor: 'pointer',
+										  background: preferredLabelFormat === opt.value
+										    ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+										    : '#f3f4f6',
+										  color: preferredLabelFormat === opt.value ? 'white' : '#374151',
+										  transition: 'all 0.2s'
+										}}
+									  >
+										{opt.label}
+									  </button>
+									))}
+								  </div>
+								</div>
+
 								{/* Dataset Index */}
 								<div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
 									<div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
@@ -2926,8 +3051,10 @@
 									<div style={{ fontSize: '10px', color: '#374151', marginBottom: '8px' }}>
 										Images: <b>{Object.keys(imageByBase).length}</b>
 										{" | "}YOLO: <b>{Object.keys(yoloByBase).length}</b>
-										{" | "}Paired(YOLO): <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
-
+										{" | "}JSON: <b>{Object.keys(jsonByBase).length}</b>
+										{" | "}🟢 <b>{datasetIndex.filter(r => r.status === 'paired_both').length}</b>
+										{" "}🔴 <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
+										{" "}🩷 <b>{datasetIndex.filter(r => r.status === 'paired_json').length}</b>
 									</div>
 
 									<div className="scrollable-panel" style={{ maxHeight: '220px', paddingRight: '6px' }}>
@@ -2948,13 +3075,13 @@
 													}}
 												>
 													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-														{row.status === 'paired_yolo' ? '✅Y' : '🟡'}
+														{row.badge.icon} {row.badge.label}
 													</div>
 													<div style={{ fontSize: '10px', color: '#6b7280' }}>
 														{row.imageName}
 														{row.hasYolo ? ` • ${row.yoloLabelName}` : ''}
-														{!row.hasYolo ? ' • (no label)' : ''}
-
+														{row.hasJson ? ` • ${row.jsonLabelName}`  : ''}
+														{!row.hasYolo && !row.hasJson ? ' • (no label)' : ''}
 													</div>
 												</div>
 											))
@@ -3562,12 +3689,8 @@
                                     
 
 
-                                    {/* Render existing bounding boxes — sorted largest-first so smaller boxes sit on top in DOM order */}
-                                    {[...annotations.objects].sort((a, b) => {
-                                        const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
-                                        const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
-                                        return areaB - areaA;
-                                    }).map(obj => {
+                                    {/* Render existing bounding boxes */}
+                                    {annotations.objects.map(obj => {
                                         if (!imageRef.current) return null;
                                         
                                         // Use appropriate container based on mode
@@ -3602,7 +3725,7 @@
                                                     width: `${width}px`,
                                                     height: `${height}px`,
                                                     position: 'absolute',
-                                                    zIndex: isSelected ? 1000 : 1,
+                                                    zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
 
                                                     cursor: isDrawing ? 'crosshair' : 'move',
                                                     pointerEvents: isDrawing ? 'none' : 'auto'
@@ -4882,12 +5005,8 @@
                                             draggable={false}
                                         />
                                         
-                                        {/* Render existing bounding boxes in fullscreen — sorted largest-first so smaller boxes sit on top in DOM order */}
-                                        {[...annotations.objects].sort((a, b) => {
-                                            const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
-                                            const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
-                                            return areaB - areaA;
-                                        }).map(obj => {
+                                        {/* Render existing bounding boxes in fullscreen */}
+                                        {annotations.objects.map(obj => {
                                             if (!imageRef.current || !fullscreenContainerRef.current) return null;
 
                                             
@@ -4918,7 +5037,7 @@
                                                         width: `${width}px`,
                                                         height: `${height}px`,
                                                         position: 'absolute',
-                                                        zIndex: isSelected ? 1000 : 1,
+                                                        zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
 
                                                         cursor: isDrawing ? 'crosshair' : 'move',
                                                         pointerEvents: isDrawing ? 'none' : 'auto'
