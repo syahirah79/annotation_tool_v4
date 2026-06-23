@@ -1,0 +1,7 @@
+# Local Claude Code / editor tooling config — not part of the project
+.claude/
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+*.tmp

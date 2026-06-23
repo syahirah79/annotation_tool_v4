@@ -1,0 +1,299 @@
+Below is **everything that exists in your HTML/React code** for the **Advanced Vehicle Dataset Annotation Tool**, grouped exactly into the buckets you asked for (Basic / Mechanical / Attributes / Category+Subcategory / Licence Plate), plus the other schema bits that are clearly part of the tool.
+
+---
+
+## 1) Core annotation schema (what the JSON contains)
+
+### A) Top-level JSON structure
+
+* `image`
+
+  * `filename` (string)
+  * `width` (number) — default 1920
+  * `height` (number) — default 1080
+  * `timestamp` (ISO string)
+* `objects` (array of annotation objects)
+
+### B) Every annotation object has (base fields)
+
+* `id` (number; `Date.now() + Math.random()`)
+* `type` (string) — depends on annotation type
+* `bbox` (array `[x1, y1, x2, y2]` integers)
+
+### C) Annotation *types* supported by the tool (drawing / labels)
+
+* `vehicle`
+* `license_plate`
+* `wheel` (internally converted to either `singleWheel` or `doubleWheel`)
+* `attachment`
+
+---
+
+## 2) Vehicle annotation fields (this is the “advanced vehicle dataset” part)
+
+When `type === "vehicle"`, the tool writes these extra blocks:
+
+### A) Basic (vehicle identity + context)
+
+**Vehicle-level fields**
+
+* `view_pose` (string)
+* `direction` (string)
+
+**`vehicle_info` object**
+
+* `category` (string)
+* `subcategory` (string)
+* `country` (string)
+* `brand` (string)
+* `model` (string)
+* `color` (string)
+* `operator` (string)
+* `number_of_seats` (number)
+
+### B) Mechanical (vehicle physical/mechanical cues)
+
+**`mechanical` object**
+
+* `number_of_wheels_visible` (number)
+* `number_of_axles_inferred` (number)
+* `number_of_axles_raised` (number)
+* `truck_trailer_labels_visible` (boolean)
+* `cargo_present` (boolean)
+
+### C) Attributes (functional/service/energy flags)
+
+**`attributes` object**
+
+* `is_taxi` (boolean)
+* `is_bus` (boolean)
+* `bus_type` (string)
+* `is_emergency_vehicle` (boolean)
+* `is_electric` (boolean)
+
+### D) Licence plate information (vehicle-linked block)
+
+**`license_plate` object** *(only created if `license_plate_visible` is true; otherwise `null`)*
+
+* `bbox` (array `[0,0,0,0]` initially; comment says it will be updated when plate annotation is added)
+* `text` (string)  ← from `license_plate_text`
+* `country` (string) ← from `license_plate_country`
+* `format` (string) ← from `license_plate_format`
+* `blurred` (boolean)
+* `visible` (boolean)
+
+### E) Chain-of-Thought / notes (saved to JSON)
+
+* `CoT` (array of strings)
+
+  * Comes from `vehicleForm.chainOfThought` after filtering out empty lines.
+
+### F) Relationship holders (present but not actively populated in the snippet)
+
+These are always included on vehicle creation:
+
+* `wheels` (array)
+* `axles` (array)
+* `attachments` (array)
+
+---
+
+## 3) Wheel annotations (what gets stored)
+
+When drawing a wheel:
+
+* The tool **overrides `type`** to one of:
+
+  * `singleWheel`
+  * `doubleWheel`
+* Also stores:
+
+  * `parent_id: null`
+
+(You *do* also have UI logic referring to `obj.wheel_type` in places, but the created wheel object in this snippet sets `type` to `singleWheel/doubleWheel` rather than storing a stable `wheel_type` field.)
+
+---
+
+## 4) Licence plate annotations (as their own bbox object)
+
+If you draw a plate as an annotation type (not the vehicle-linked licence_plate block), it becomes an object with:
+
+* `id`
+* `type: "license_plate"`
+* `bbox`
+* `parent_id: null`
+* `attributes: {}`
+
+---
+
+## 5) Attachment annotations (trailer/attachment bbox objects)
+
+If you draw an attachment:
+
+* `id`
+* `type: "attachment"`
+* `bbox`
+* `parent_id: null`
+* `attributes: {}`
+
+---
+
+## 6) All selectable option lists in the tool
+
+### A) Vehicle categories + subcategories (exactly as in code)
+
+**Car**
+
+* Sedan, Hatchback, Coupe, Sports, Convertible, Other
+
+**SUV**
+
+* SUVs, 4x4 Vehicles, Other
+
+**MPV_Small**
+
+* Minivans, Compact MPVs, Honda Freed, Toyota Sienta, Perodua Alza, Proton Exora, Mitsubishi Xpander, Toyota Veloz, Daihatsu Xenia, Perodua Aruz, Honda BR-V, Chery Tiggo 8 Pro, Other
+
+**MPV_Big**
+
+* Toyota Alphard, Kia Carnival, Hyundai Staria, Toyota Vellfire, Honda Odyssey, Nissan Serena, Mazda Biante, Mercedes-Benz V-Class, Maxus G10, Ford Tourneo Custom, Lexus LM 350h, Other
+
+**Pickup_Truck**
+
+* 4x4, Light Trucks, Other
+
+**Bus**
+
+* School, City, Coach Buses, Other
+
+**Motorcycle**
+
+* Motorbikes, Scooters, Other
+
+**Vans**
+
+* Passenger & Cargo Vans (large), Other
+
+**Lorry**
+
+* 2-Axle (4-Wheel Truck), Other
+
+**Small_Truck**
+
+* 2-Axle (6 Wheel) Small trucks, Cargo, Other
+
+**Medium_Truck**
+
+* 3-Axle Medium-sized trucks, Other
+
+**Large_Truck**
+
+* 4-Axle Larger commercial trucks, Other
+
+**Heavy_Truck**
+
+* 5+ Axle Heavy-duty trucks, Other
+
+**Construction_and_Industrial_vehicle**
+
+* Bulldozer, Excavator, Crane, Forklift, Dump truck, Mixer, Roller, Tow trucks, Other
+
+**Emergency_Vehicle**
+
+* Bomba, Polis, Ambulance, Other
+
+**Tanker**
+
+* Fuel Tanker, Water Tanker, Chemical Tanker, Food Grade Tanker, Other
+
+**Trailer**
+
+* Box Trailer, Flatbed Trailer, Refrigerated Trailer, Car Carrier Trailer, Livestock Trailer, Other
+
+**Container**
+
+* 20ft Container, 40ft Container, Refrigerated Container, Open Top Container, Tank Container, Other
+
+### B) Direction options (`direction`)
+
+* northbound
+* southbound
+* eastbound
+* westbound
+* towards_camera
+* away_from_camera
+* left_to_right
+* right_to_left
+* unknown
+
+### C) View pose options (`view_pose`)
+
+* front
+* rear
+* side_left
+* side_right
+* front_left
+* front_right
+* rear_left
+* rear_right
+
+### D) Colour options (`color`)
+
+* White, Black, Silver, Gray, Red, Blue, Green, Yellow, Brown, Orange, Purple, Gold, Maroon, Other
+
+### E) Annotation type options (UI)
+
+* Vehicle
+* Licence Plate
+* Wheel
+* Attachment/Trailer
+
+### F) Wheel type options (UI)
+
+* Single wheel
+* Double wheel
+
+---
+
+## 7) Default values (from your `vehicleForm` initial state)
+
+* `category: "Car"`
+* `subcategory: ""`
+* `country: "MY"`
+* `brand: ""`
+* `model: ""`
+* `color: ""`
+* `operator: ""`
+* `number_of_seats: 4`
+* `view_pose: "rear"`
+* `direction: "northbound"`
+
+Mechanical defaults:
+
+* `number_of_wheels_visible: 4`
+* `number_of_axles_inferred: 2`
+* `number_of_axles_raised: 0`
+* `truck_trailer_labels_visible: false`
+* `cargo_present: false`
+
+Attributes defaults:
+
+* `is_taxi: false`
+* `is_bus: false`
+* `bus_type: ""`
+* `is_emergency_vehicle: false`
+* `is_electric: false`
+
+Licence plate defaults:
+
+* `license_plate_text: ""`
+* `license_plate_country: "MY"`
+* `license_plate_format: "License_Plate_Normal"`
+* `license_plate_blurred: false`
+* `license_plate_visible: true`
+
+CoT:
+
+* `chainOfThought: []`
+
+---
