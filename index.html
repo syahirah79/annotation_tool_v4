@@ -523,8 +523,11 @@
 			const [jsonFiles, setJsonFiles] = React.useState([]);          // array<File>
 			const [jsonByBase, setJsonByBase] = React.useState({});        // { baseName: { text, fileName } }
 
-			// 'auto' | 'yolo' | 'json'
+			// 'auto' | 'json' | 'yolo'  — which label source to prefer when opening an image
 			const [preferredLabelFormat, setPreferredLabelFormat] = React.useState('auto');
+
+			// 'json' | 'yolo' | 'both' | null — drives bbox border tint on canvas
+			const [annotationsSource, setAnnotationsSource] = React.useState(null);
 
 			const [datasetIndex, setDatasetIndex] = React.useState([]);    // array of rows for UI + navigation
 			const [currentBase, setCurrentBase] = React.useState(null);    // which baseName is “active”
@@ -766,9 +769,9 @@
 			// Dataset index helpers (Images + Labels)
 			// ------------------------------
 			const rebuildDatasetIndex = ({ nextImageByBase, nextYoloByBase, nextJsonByBase } = {}) => {
-				const imgs = nextImageByBase ?? imageByBase;
-				const yoloLabels = nextYoloByBase ?? yoloByBase;
-				const jsonLabels = nextJsonByBase ?? jsonByBase;
+				const imgs        = nextImageByBase ?? imageByBase;
+				const yoloLabels  = nextYoloByBase  ?? yoloByBase;
+				const jsonLabels  = nextJsonByBase  ?? jsonByBase;
 
 				const bases = new Set([
 					...Object.keys(imgs),
@@ -779,9 +782,9 @@
 				const rows = Array.from(bases)
 					.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
 					.map((b) => {
-						const img = imgs[b] || null;
-						const yoloLab = yoloLabels[b] || null;
-						const jsonLab = jsonLabels[b] || null;
+						const img      = imgs[b]       || null;
+						const yoloLab  = yoloLabels[b] || null;
+						const jsonLab  = jsonLabels[b] || null;
 
 						const hasYolo = !!yoloLab;
 						const hasJson = !!jsonLab;
@@ -789,18 +792,26 @@
 						let status = "image_only";
 						if (!img && (hasYolo || hasJson)) status = "label_only";
 						else if (img && hasYolo && hasJson) status = "paired_both";
-						else if (img && hasYolo) status = "paired_yolo";
-						else if (img && hasJson) status = "paired_json";
+						else if (img && hasYolo)            status = "paired_yolo";
+						else if (img && hasJson)            status = "paired_json";
+
+						// Badge: 🟢 both  🩷 json-only  🔴 yolo-only  🟡 image-only
+						const badge =
+							status === 'paired_both' ? { icon: '🟢', label: 'Y+J' } :
+							status === 'paired_yolo' ? { icon: '🔴', label: 'Y'   } :
+							status === 'paired_json' ? { icon: '🩷', label: 'J'   } :
+							                           { icon: '🟡', label: '—'   };
 
 						return {
 							base: b,
 							hasImage: !!img,
 							hasYolo,
 							hasJson,
-							imageName: img?.name ?? "",
-							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`) : "",
+							imageName:     img?.name    ?? "",
+							yoloLabelName: hasYolo ? (yoloLab.fileName ?? `${b}.txt`)  : "",
 							jsonLabelName: hasJson ? (jsonLab.fileName ?? `${b}.json`) : "",
 							status,
+							badge,
 						};
 					});
 
@@ -848,9 +859,9 @@
 			};
 
 			const openByBase = (base, { nextImageByBase, nextYoloByBase, nextJsonByBase } = {}) => {
-				const imgs = nextImageByBase ?? imageByBase;
-				const yoloLabels = nextYoloByBase ?? yoloByBase;
-				const jsonLabels = nextJsonByBase ?? jsonByBase;
+				const imgs       = nextImageByBase ?? imageByBase;
+				const yoloLabels = nextYoloByBase  ?? yoloByBase;
+				const jsonLabels = nextJsonByBase  ?? jsonByBase;
 
 				const imgFile = imgs[base];
 				if (!imgFile) {
@@ -861,21 +872,27 @@
 				setCurrentBase(base);
 
 				const yoloLab = yoloLabels[base] || null;
-				const jsonLab = jsonLabels[base] || null;
+				const jsonLab = jsonLabels[base]  || null;
 
+				// Determine source tag for canvas bbox tinting
+				const hasBoth   = !!(yoloLab && jsonLab);
+				const sourceTag = hasBoth ? 'both' : jsonLab ? 'json' : yoloLab ? 'yolo' : null;
+
+				// Route based on user preference
 				if (preferredLabelFormat === 'json') {
-					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
-					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab, sourceTag); return; }
+					if (yoloLab) { setAnnotationsSource('yolo'); loadImageWithYolo(imgFile, yoloLab); return; }
 				} else if (preferredLabelFormat === 'yolo') {
-					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
-					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
+					if (yoloLab) { setAnnotationsSource(sourceTag); loadImageWithYolo(imgFile, yoloLab); return; }
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab, sourceTag); return; }
 				} else {
-					// auto: prefer JSON (richer data), then YOLO
-					if (jsonLab) { loadImageWithJson(imgFile, jsonLab); return; }
-					if (yoloLab) { loadImageWithYolo(imgFile, yoloLab); return; }
+					// auto: prefer JSON (richer data), fallback to YOLO
+					if (jsonLab) { loadImageWithJson(imgFile, jsonLab, sourceTag); return; }
+					if (yoloLab) { setAnnotationsSource('yolo'); loadImageWithYolo(imgFile, yoloLab); return; }
 				}
 
-				// No labels found
+				// No labels at all — load image only, clear source tint
+				setAnnotationsSource(null);
 				handleImageUpload(imgFile);
 			};
 
@@ -1099,12 +1116,273 @@
 			  }
 
 			  setYoloByBase(next);
-
-			  // update dataset index (we'll update rebuildDatasetIndex in step 4)
 			  rebuildDatasetIndex({ nextYoloByBase: next });
 			};
 
-			
+			// JSON folder handler — reads all .json files, indexes by basename
+			const handleJsonDirectorySelect = async (e) => {
+			  const files = e.target.files;
+			  if (!files || files.length === 0) return;
+
+			  const jsonFilesList = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
+			  if (jsonFilesList.length === 0) {
+				alert("No .json files found in the selected folder!");
+				return;
+			  }
+
+			  setJsonFiles(jsonFilesList);
+
+			  const pairs = await Promise.all(jsonFilesList.map(async (f) => {
+				try {
+				  const text = await f.text();
+				  const b = baseName(f.name);
+				  return [b, { text, fileName: f.name }];
+				} catch (err) {
+				  console.warn("Failed reading JSON:", f.name, err);
+				  return null;
+				}
+			  }));
+
+			  const next = {};
+			  for (const p of pairs) {
+				if (!p) continue;
+				const [b, data] = p;
+				next[b] = data;
+			  }
+
+			  setJsonByBase(next);
+			  rebuildDatasetIndex({ nextJsonByBase: next });
+			};
+
+
+			// ─────────────────────────────────────────────────────────────────────
+			// parseJsonToAnnotations
+			//   Converts a raw JSON label file into the tool's internal annotations
+			//   object  { image: {...}, objects: [...] }.
+			//
+			//   Handles two real schemas:
+			//
+			//   Format A – Manual export  (image_metadata + vehicles[])
+			//     • bbox  = [x, y, w, h]  →  converted to [x1, y1, x2, y2]
+			//     • vehicle fields under  basic_information / mechanical_properties /
+			//       vehicle_attributes
+			//     • sub-objects nested in  vehicles[].components[]
+			//
+			//   Format B – VLM auto-label  (image + objects[])
+			//     • bbox  = [x1, y1, x2, y2]  →  used as-is
+			//     • vehicle fields under  vehicle_info / mechanical / attributes
+			//     • license_plate & wheels embedded directly on the vehicle object
+			// ─────────────────────────────────────────────────────────────────────
+			const parseJsonToAnnotations = (jsonData) => {
+
+				// ── shared helpers ──────────────────────────────────────────────
+				const validBbox = (b) => Array.isArray(b) && b.length === 4 && b.some(v => v !== 0);
+
+				const xywhToCorners = (b) => {
+					if (!validBbox(b)) return null;
+					return [b[0], b[1], b[0] + b[2], b[1] + b[3]];
+				};
+
+				// Normalise component type strings to the tool's internal names
+				const normType = (t) => {
+					if (!t) return t;
+					if (t === 'license_plate_taxi') return 'license_plate';
+					if (t === 'wheel_single')        return 'singleWheel';
+					if (t === 'wheel_double')        return 'doubleWheel';
+					if (t === 'make_logo')           return 'make';
+					return t;
+				};
+
+				// ════════════════════════════════════════════════════════════════
+				// FORMAT A  —  { image_metadata, vehicles[] }
+				// ════════════════════════════════════════════════════════════════
+				if (jsonData.vehicles) {
+					const meta    = jsonData.image_metadata || {};
+					const objects = [];
+
+					(jsonData.vehicles || []).forEach((veh, vi) => {
+						const vehicleBbox = xywhToCorners(veh.bbox);
+						if (!vehicleBbox) return;
+
+						const bi    = veh.basic_information        || {};
+						const mech  = veh.mechanical_properties    || {};
+						const attrs = veh.vehicle_attributes       || {};
+						const lpi   = veh.licence_plate_information || {};
+						const vehicleId = veh.id || `fmtA_v_${vi}`;
+
+						objects.push({
+							id:        vehicleId,
+							type:      'vehicle',
+							bbox:      vehicleBbox,
+							direction: bi.direction   || 'Unknown',
+							vehicle_info: {
+								category:    bi.category    || 'Car',
+								subcategory: bi.subcategory || '',
+								country:     bi.country     || 'MY',
+								make:        bi.make        || '',
+								model:       bi.model       || '',
+								color:       bi.colour      || bi.color || ''
+							},
+							mechanical: {
+								number_of_axles_inferred:      mech.axles_inferred             ?? 2,
+								number_of_axles_raised:        mech.raised_axles ? 1 : 0,
+								truck_trailer_labels_visible:  mech.truck_trailer_labels_visible ?? false,
+								cargo_present:                 mech.cargo_present               ?? false
+							},
+							attributes: {
+								is_taxi:               attrs.is_taxi               ?? false,
+								is_bus:                attrs.is_bus                ?? false,
+								bus_type:              attrs.bus_type              || '',
+								is_emergency_vehicle:  attrs.is_emergency_vehicle  ?? false,
+								is_electric:           attrs.is_electric           ?? false
+							},
+							license_plates: [],
+							wheels:         [],
+							axles:          [],
+							attachments:    [],
+							CoT:            veh.CoT || []
+						});
+
+						// Nested components (wheels, plates, make logos …)
+						(veh.components || []).forEach((comp, ci) => {
+							const compBbox = xywhToCorners(comp.bbox);
+							if (!compBbox) return;
+							objects.push({
+								id:        comp.id || `fmtA_c_${vi}_${ci}`,
+								type:      normType(comp.type),
+								bbox:      compBbox,
+								parent_id: vehicleId,
+								...(comp.text   ? { text: comp.text }   : {}),
+								...(comp.brand  ? { make: comp.brand }  : {}),
+								...(comp.country ? { country: comp.country } : {})
+							});
+						});
+					});
+
+					// Orphan / unassigned components at root level
+					(jsonData.unassigned_components || []).forEach((orphan, oi) => {
+						const orphBbox = xywhToCorners(orphan.bbox);
+						if (!orphBbox) return;
+						objects.push({
+							id:        orphan.id || `fmtA_o_${oi}`,
+							type:      normType(orphan.type) || 'vehicle',
+							bbox:      orphBbox,
+							parent_id: null
+						});
+					});
+
+					return {
+						image: {
+							filename:  meta.filename  || '',
+							width:     meta.width     || 0,
+							height:    meta.height    || 0,
+							timestamp: meta.timestamp || new Date().toISOString()
+						},
+						objects
+					};
+				}
+
+				// ════════════════════════════════════════════════════════════════
+				// FORMAT B  —  { image, objects[] }   (VLM / flat schema)
+				// ════════════════════════════════════════════════════════════════
+				const meta    = jsonData.image || {};
+				const objects = [];
+
+				(jsonData.objects || []).forEach((obj, oi) => {
+					const bbox = validBbox(obj.bbox) ? obj.bbox : null;
+
+					if (obj.type === 'vehicle') {
+						if (!bbox) return;
+
+						const vehicleId = obj.id || `fmtB_v_${oi}`;
+						const vi    = obj.vehicle_info || {};
+						const mech  = obj.mechanical   || {};
+						const attrs = obj.attributes   || {};
+
+						objects.push({
+							id:        vehicleId,
+							type:      'vehicle',
+							bbox,
+							direction: obj.direction || 'Unknown',
+							vehicle_info: {
+								category:    vi.category    || 'Car',
+								subcategory: vi.subcategory || '',
+								country:     vi.country     || 'MY',
+								make:        vi.make        || '',
+								model:       vi.model       || '',
+								color:       vi.color       || vi.colour || ''
+							},
+							mechanical: {
+								number_of_axles_inferred:      mech.number_of_axles_inferred     ?? 2,
+								number_of_axles_raised:        mech.number_of_axles_raised       ?? 0,
+								truck_trailer_labels_visible:  mech.truck_trailer_labels_visible ?? false,
+								cargo_present:                 mech.cargo_present               ?? false
+							},
+							attributes: {
+								is_taxi:               attrs.is_taxi               ?? false,
+								is_bus:                attrs.is_bus                ?? false,
+								bus_type:              attrs.bus_type              || '',
+								is_emergency_vehicle:  attrs.is_emergency_vehicle  ?? false,
+								is_electric:           attrs.is_electric           ?? false
+							},
+							license_plates: [],
+							wheels:         [],
+							axles:          [],
+							attachments:    [],
+							CoT:            obj.CoT || []
+						});
+
+						// Embedded license plate (bbox may be null — skip if so)
+						const lp = obj.license_plate;
+						if (lp && validBbox(lp.bbox)) {
+							objects.push({
+								id:        lp.id  || `fmtB_lp_${oi}`,
+								type:      normType(lp.type) || 'license_plate',
+								bbox:      lp.bbox,
+								parent_id: vehicleId,
+								...(lp.text    ? { text:    lp.text }    : {}),
+								...(lp.country ? { country: lp.country } : {}),
+								...(lp.format  ? { format:  lp.format }  : {})
+							});
+						}
+
+						// Embedded wheels (bbox may be null — skip if so)
+						(obj.wheels || []).forEach((w, wi) => {
+							if (!validBbox(w.bbox)) return;
+							objects.push({
+								id:        w.id || `fmtB_w_${oi}_${wi}`,
+								type:      normType(w.type) || 'singleWheel',
+								bbox:      w.bbox,
+								parent_id: vehicleId
+							});
+						});
+
+					} else {
+						// Standalone / orphan component in the flat objects list
+						if (!bbox) return;
+						objects.push({
+							id:        obj.id || `fmtB_o_${oi}`,
+							type:      normType(obj.type) || 'vehicle',
+							bbox,
+							parent_id: obj.parent_id || null,
+							...(obj.text    ? { text:    obj.text }    : {}),
+							...(obj.country ? { country: obj.country } : {})
+						});
+					}
+				});
+
+				return {
+					image: {
+						filename:  meta.filename  || '',
+						width:     meta.width     || 0,
+						height:    meta.height    || 0,
+						timestamp: meta.timestamp || new Date().toISOString()
+					},
+					objects
+				};
+			};
+
+
 			const parseYoloTxtToObjects = (txt, imgW, imgH) => {
 			  const lines = (txt || "")
 				.split(/\r?\n/)
@@ -1195,179 +1473,68 @@
 			  reader.readAsDataURL(imageFile);
 			};
 
-			// JSON folder handler
-			const handleJsonDirectorySelect = async (e) => {
-				const files = e.target.files;
-				if (!files || files.length === 0) return;
 
-				const jsonFilesList = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".json"));
-				if (jsonFilesList.length === 0) {
-					alert("No .json files found in the selected folder!");
-					return;
-				}
+			// ─────────────────────────────────────────────────────────────────────
+			// loadImageWithJson
+			//   Loads an image + its JSON label file, populates annotations AND
+			//   the Image Properties panel (scene, camera_position, etc.)
+			// ─────────────────────────────────────────────────────────────────────
+			const loadImageWithJson = (imageFile, jsonData, sourceTag) => {
+			  // sourceTag: 'json' | 'both'  — used for bbox border tinting
+			  const reader = new FileReader();
+			  reader.onload = (e) => {
+				const img = new Image();
+				img.onload = () => {
+				  setImage(imageFile);
+				  setImagePreview(e.target.result);
+				  setAnnotationsSource(sourceTag || 'json');
 
-				setJsonFiles(jsonFilesList);
-
-				const pairs = await Promise.all(jsonFilesList.map(async (f) => {
+				  const savedData = imageAnnotationsMap[imageFile.name];
+				  if (savedData) {
+					setAnnotations(savedData.annotations);
+					setVehicleForm(normVehicleForm(savedData.vehicleForm));
+					if (savedData.imagePropertiesForm) setImagePropertiesForm(savedData.imagePropertiesForm);
+					showTemporaryMessage(`📂 Restored ${savedData.annotations.objects.length} annotations\n${imageFile.name}`);
+				  } else {
 					try {
-						const text = await f.text();
-						const b = baseName(f.name);
-						return [b, { text, fileName: f.name }];
+					  const parsed = JSON.parse(jsonData.text);
+					  const annots = parseJsonToAnnotations(parsed);
+
+					  // Fill in dimensions if the JSON didn't carry them
+					  if (!annots.image.width)    annots.image.width    = img.width;
+					  if (!annots.image.height)   annots.image.height   = img.height;
+					  if (!annots.image.filename) annots.image.filename = imageFile.name;
+
+					  setAnnotations(annots);
+
+					  // Populate Image Properties panel from whichever top-level key is present
+					  const imgMeta = parsed.image_metadata || parsed.image || {};
+					  setImagePropertiesForm(prev => ({
+						...prev,
+						...(imgMeta.image_type       != null ? { image_type:       imgMeta.image_type }       : {}),
+						...(imgMeta.site_location    != null ? { site_location:    imgMeta.site_location }    : {}),
+						...(imgMeta.scene            != null ? { scene:            imgMeta.scene }            : {}),
+						...(imgMeta.camera_position  != null ? { camera_position:  imgMeta.camera_position }  : {}),
+						...(imgMeta.is_rain          != null ? { is_rain:          imgMeta.is_rain }          : {}),
+					  }));
+
+					  showTemporaryMessage(`✅ Loaded JSON: ${annots.objects.length} objects\n${jsonData.fileName}`);
 					} catch (err) {
-						console.warn("Failed reading JSON:", f.name, err);
-						return null;
+					  console.error('Failed to parse JSON annotation:', err);
+					  setAnnotations({
+						image: { filename: imageFile.name, width: img.width, height: img.height, timestamp: new Date().toISOString() },
+						objects: []
+					  });
+					  showTemporaryMessage(`❌ Failed to parse JSON: ${jsonData.fileName}`);
 					}
-				}));
+				  }
 
-				const next = {};
-				for (const p of pairs) {
-					if (!p) continue;
-					const [b, data] = p;
-					next[b] = data;
-				}
-
-				setJsonByBase(next);
-				rebuildDatasetIndex({ nextJsonByBase: next });
-			};
-
-			// Reverse of buildExportJson: parse exported JSON → internal annotations format
-			const parseJsonToAnnotations = (jsonData) => {
-				const xywhToX1Y1X2Y2 = (b) => {
-					if (!b || b.length < 4) return null;
-					return [b[0], b[1], b[0] + b[2], b[1] + b[3]];
+				  setSelectedAnnotation(null);
+				  setIsDrawing(false);
 				};
-
-				const meta = jsonData.image_metadata || {};
-				const vehicles = jsonData.vehicles || [];
-				const orphans = jsonData.unassigned_components || [];
-				const objects = [];
-
-				vehicles.forEach((veh, vi) => {
-					const vehicleBbox = xywhToX1Y1X2Y2(veh.bbox);
-					if (!vehicleBbox) return;
-
-					const bi = veh.basic_information || {};
-					const mech = veh.mechanical_properties || {};
-					const attrs = veh.vehicle_attributes || {};
-
-					objects.push({
-						id: veh.id || `json_v_${vi}`,
-						type: 'vehicle',
-						bbox: vehicleBbox,
-						direction: bi.direction || 'Northbound',
-						vehicle_info: {
-							category: bi.category || 'Car',
-							subcategory: bi.subcategory || '',
-							country: bi.country || 'MY',
-							make: bi.make || '',
-							model: bi.model || '',
-							color: bi.colour || ''
-						},
-						mechanical: {
-							number_of_axles_inferred: mech.axles_inferred ?? 2,
-							number_of_axles_raised: mech.raised_axles ? 1 : 0,
-							truck_trailer_labels_visible: mech.truck_trailer_labels_visible ?? false,
-							cargo_present: mech.cargo_present ?? false
-						},
-						attributes: {
-							is_taxi: attrs.is_taxi ?? false,
-							is_bus: attrs.is_bus ?? false,
-							bus_type: attrs.bus_type || '',
-							is_emergency_vehicle: attrs.is_emergency_vehicle ?? false,
-							is_electric: attrs.is_electric ?? false
-						},
-						license_plates: [],
-						wheels: [],
-						axles: [],
-						attachments: [],
-						CoT: veh.CoT || []
-					});
-
-					(veh.components || []).forEach((comp, ci) => {
-						const compBbox = xywhToX1Y1X2Y2(comp.bbox);
-						if (!compBbox) return;
-						let type = comp.type;
-						if (type === 'license_plate' || type === 'license_plate_taxi') type = 'license_plate';
-						else if (type === 'wheel_single') type = 'singleWheel';
-						else if (type === 'wheel_double') type = 'doubleWheel';
-						else if (type === 'make_logo') type = 'make';
-						objects.push({
-							id: comp.id || `json_c_${vi}_${ci}`,
-							type,
-							bbox: compBbox,
-							parent_id: veh.id || `json_v_${vi}`,
-							...(comp.text ? { text: comp.text } : {}),
-							...(comp.brand ? { make: comp.brand } : {})
-						});
-					});
-				});
-
-				orphans.forEach((orphan, oi) => {
-					const orphBbox = xywhToX1Y1X2Y2(orphan.bbox);
-					if (!orphBbox) return;
-					let type = orphan.type;
-					if (type === 'license_plate' || type === 'license_plate_taxi') type = 'license_plate';
-					else if (type === 'wheel_single') type = 'singleWheel';
-					else if (type === 'wheel_double') type = 'doubleWheel';
-					else if (type === 'make_logo') type = 'make';
-					objects.push({
-						id: orphan.id || `json_o_${oi}`,
-						type: type || 'vehicle',
-						bbox: orphBbox,
-						parent_id: null
-					});
-				});
-
-				return {
-					image: {
-						filename: meta.filename || '',
-						width: meta.width || 0,
-						height: meta.height || 0,
-						timestamp: meta.timestamp || new Date().toISOString()
-					},
-					objects
-				};
-			};
-
-			const loadImageWithJson = (imageFile, jsonData) => {
-				const reader = new FileReader();
-				reader.onload = (e) => {
-					const img = new Image();
-					img.onload = () => {
-						setImage(imageFile);
-						setImagePreview(e.target.result);
-
-						const savedData = imageAnnotationsMap[imageFile.name];
-						if (savedData) {
-							setAnnotations(savedData.annotations);
-							setVehicleForm(normVehicleForm(savedData.vehicleForm));
-							if (savedData.imagePropertiesForm) setImagePropertiesForm(savedData.imagePropertiesForm);
-							showTemporaryMessage(`📂 Restored ${savedData.annotations.objects.length} annotations\n${imageFile.name}`);
-						} else {
-							try {
-								const parsed = JSON.parse(jsonData.text);
-								const annots = parseJsonToAnnotations(parsed);
-								if (!annots.image.width) annots.image.width = img.width;
-								if (!annots.image.height) annots.image.height = img.height;
-								if (!annots.image.filename) annots.image.filename = imageFile.name;
-								setAnnotations(annots);
-								showTemporaryMessage(`✅ Loaded JSON: ${annots.objects.length} objects\n${jsonData.fileName}`);
-							} catch (err) {
-								console.error('Failed to parse JSON annotation:', err);
-								setAnnotations({
-									image: { filename: imageFile.name, width: img.width, height: img.height, timestamp: new Date().toISOString() },
-									objects: []
-								});
-								showTemporaryMessage(`❌ Failed to parse JSON: ${jsonData.fileName}`);
-							}
-						}
-
-						setSelectedAnnotation(null);
-						setIsDrawing(false);
-					};
-					img.src = e.target.result;
-				};
-				reader.readAsDataURL(imageFile);
+				img.src = e.target.result;
+			  };
+			  reader.readAsDataURL(imageFile);
 			};
 
 
@@ -1757,6 +1924,51 @@
                 return () => window.removeEventListener('beforeunload', handleBeforeUnload);
             }, [image, annotations, vehicleForm, imagePropertiesForm, imageAnnotationsMap]);
 
+            // Auto-populate vehicle form whenever selectedAnnotation changes
+            // Covers both canvas bbox clicks AND annotation list clicks
+            React.useEffect(() => {
+                if (!selectedAnnotation) return;
+                const obj = annotations.objects.find(o => o.id === selectedAnnotation);
+                if (!obj || obj.type !== 'vehicle') return;
+
+                const normPlate = (p) => ({
+                    text:    p.text    || '',
+                    country: ['MY','SG','TH','ID'].includes(p.country) ? p.country : 'MY',
+                    format:  p.format  || 'License_Plate_Normal',
+                    blurred: p.blurred || false,
+                    visible: p.visible !== false
+                });
+
+                const plates = (() => {
+                    if (Array.isArray(obj.license_plates) && obj.license_plates.length > 0)
+                        return obj.license_plates.map(normPlate);
+                    if (obj.license_plate)
+                        return [normPlate(obj.license_plate)];
+                    return [{ text: '', country: 'MY', format: 'License_Plate_Normal', blurred: false, visible: true }];
+                })();
+
+                setVehicleForm({
+                    category:                     obj.vehicle_info?.category                    || 'Car',
+                    subcategory:                  obj.vehicle_info?.subcategory                 || '',
+                    country:                      obj.vehicle_info?.country                     || 'MY',
+                    make:                         obj.vehicle_info?.make                        || '',
+                    model:                        obj.vehicle_info?.model                       || '',
+                    color:                        obj.vehicle_info?.color                       || '',
+                    direction:                    obj.direction                                 || 'Northbound',
+                    number_of_axles_inferred:     obj.mechanical?.number_of_axles_inferred      ?? 2,
+                    number_of_axles_raised:       obj.mechanical?.number_of_axles_raised        ?? 0,
+                    truck_trailer_labels_visible: obj.mechanical?.truck_trailer_labels_visible  ?? false,
+                    cargo_present:                obj.mechanical?.cargo_present                 ?? false,
+                    is_taxi:                      obj.attributes?.is_taxi                       ?? false,
+                    is_bus:                       obj.attributes?.is_bus                        ?? false,
+                    bus_type:                     obj.attributes?.bus_type                      || '',
+                    is_emergency_vehicle:         obj.attributes?.is_emergency_vehicle          ?? false,
+                    is_electric:                  obj.attributes?.is_electric                   ?? false,
+                    license_plates:               plates,
+                    chainOfThought:               Array.isArray(obj.CoT) ? obj.CoT : []
+                });
+            }, [selectedAnnotation]);
+
             // Debounced auto-save of current image annotations (saves every 3 seconds if changes detected)
             React.useEffect(() => {
                 if (!image || !annotations.image.filename) return;
@@ -2082,10 +2294,10 @@
                 const imgMeta = annots.image || {};
                 const props = imgPropsForm || {};
 
-                // Helper: convert [x1,y1,x2,y2] → [x,y,w,h]
+                // Helper: convert [x1,y1,x2,y2] → {x,y,w,h}
                 const bboxToXYWH = (b) => {
                     if (!b || b.length < 4) return null;
-                    return [b[0], b[1], b[2] - b[0], b[3] - b[1]];
+                    return { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] };
                 };
 
                 // Helper: check if child bbox is inside parent bbox
@@ -2097,13 +2309,13 @@
                     return cx >= parent[0] && cx <= parent[2] && cy >= parent[1] && cy <= parent[3];
                 };
 
-                // 1. Identify all vehicles and assign vehicle_XX IDs
+                // 1. Identify all vehicles and assign vhcl_XX IDs
                 const vehicles = objs.filter(o => o.type === 'vehicle');
                 const nonVehicles = objs.filter(o => o.type !== 'vehicle');
 
                 // 2. Build output vehicles with components
                 const outputVehicles = vehicles.map((veh, idx) => {
-                    const vId = `vehicle_${String(idx + 1).padStart(2, '0')}`;
+                    const vId = `vhcl_${String(idx + 1).padStart(2, '0')}`;
 
                     // Find children: non-vehicle objects whose bbox center is inside this vehicle's bbox
                     // Also respect explicit parent_id if already set
@@ -2115,8 +2327,6 @@
                     });
 
                     // Build components with proper IDs
-                    // veh.license_plates[] is used to match form data to each plate bbox by order
-                    const vehPlates = Array.isArray(veh.license_plates) ? veh.license_plates : [];
                     let lpCount = 0, whlCount = 0, mkCount = 0, otherCount = 0;
                     const components = children.map(child => {
                         let compId, compType;
@@ -2124,27 +2334,25 @@
 
                         if (child.type === 'license_plate') {
                             lpCount++;
-                            compId = `licenseplate_${String(lpCount).padStart(2, '0')}`;
+                            compId = `${vId}_lp_${String(lpCount).padStart(2, '0')}`;
                             compType = 'license_plate';
-                            // Match form data by order: 1st plate bbox → vehPlates[0], etc.
-                            const plateData = vehPlates[lpCount - 1] || {};
                             return {
                                 id: compId,
                                 type: compType,
                                 parent_id: vId,
                                 bbox: childBbox,
-                                text: plateData.text || child.text || null,
-                                country: plateData.country || child.country || null,
-                                format: plateData.format || child.format || null,
-                                blurred: plateData.blurred ?? child.blurred ?? false,
-                                visible: plateData.visible ?? child.visible ?? true
+                                text: child.license_plate?.text || child.text || null,
+                                country: child.license_plate?.country || child.country || null,
+                                format: child.license_plate?.format || child.format || null,
+                                blurred: child.license_plate?.blurred ?? child.blurred ?? false,
+                                visible: child.license_plate?.visible ?? child.visible ?? true
                             };
                         }
 
                         if (child.type === 'wheel' || child.type === 'singleWheel' || child.type === 'doubleWheel') {
                             whlCount++;
                             const wType = (child.wheel_type === 'double' || child.type === 'doubleWheel') ? 'wheel_double' : 'wheel_single';
-                            compId = `wheel_${String(whlCount).padStart(2, '0')}`;
+                            compId = `${vId}_whl_${String(whlCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: wType,
@@ -2155,7 +2363,7 @@
 
                         if (child.type === 'made' || child.type === 'make') {
                             mkCount++;
-                            compId = `make_${String(mkCount).padStart(2, '0')}`;
+                            compId = `${vId}_mk_${String(mkCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'make_logo',
@@ -2167,7 +2375,7 @@
 
                         if (child.type === 'attachment') {
                             otherCount++;
-                            compId = `attach_${String(otherCount).padStart(2, '0')}`;
+                            compId = `${vId}_att_${String(otherCount).padStart(2, '0')}`;
                             return {
                                 id: compId,
                                 type: 'attachment',
@@ -2178,7 +2386,7 @@
 
                         // Fallback
                         otherCount++;
-                        compId = `component_${String(otherCount).padStart(2, '0')}`;
+                        compId = `${vId}_comp_${String(otherCount).padStart(2, '0')}`;
                         return {
                             id: compId,
                             type: child.type || 'unknown',
@@ -2264,6 +2472,8 @@
 
                 // 4. Build final output
                 return {
+                    schema_name: "imap_annotation_v1",
+                    source_template: "template_01.json (modified)",
                     image_metadata: {
                         image_id: null,
                         filename: imgMeta.filename || null,
@@ -2282,7 +2492,8 @@
                     export_info: {
                         tool: "Advanced Vehicle Dataset Annotation Tool",
                         version: "4.16",
-                        exported_at: new Date().toISOString()
+                        exported_at: new Date().toISOString(),
+                        schema_name: "imap_annotation_v1"
                     }
                 };
             };
@@ -2357,14 +2568,21 @@
                         
                         // FIXED: Better color system with reduced opacity to prevent hiding
                         const typeColors = {
-                            'vehicle': { stroke: '#22c55e', fill: 'rgba(34, 197, 94, 0.08)' },
-                            'license_plate': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.08)' },
-                            'wheel': { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.08)' },
-                            'attachment': { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.08)' },
-                            'make': { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.08)' }
+                            'vehicle':       { stroke: '#22c55e', fill: 'rgba(34,  197, 94,  0.08)' },
+                            'license_plate': { stroke: '#3b82f6', fill: 'rgba(59,  130, 246, 0.08)' },
+                            'singleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                            'doubleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                            'wheel':         { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                            'attachment':    { stroke: '#8b5cf6', fill: 'rgba(139, 92,  246, 0.08)' },
+                            'make':          { stroke: '#ec4899', fill: 'rgba(236, 72,  153, 0.08)' }
                         };
-                        
-                        const colors = typeColors[obj.type] || typeColors['vehicle'];
+                        // Source tint: 🩷 JSON-only  🔴 YOLO-only  🟢 both available
+                        const sourceStroke =
+                            annotationsSource === 'both' ? '#22c55e' :
+                            annotationsSource === 'json' ? '#db2777' :
+                            annotationsSource === 'yolo' ? '#ef4444' : null;
+                        const baseColors = typeColors[obj.type] || typeColors['vehicle'];
+                        const colors = sourceStroke ? { ...baseColors, stroke: sourceStroke } : baseColors;
                         
                         // FIXED: Properly convert [x1,y1,x2,y2] to x,y,width,height
                         const x = Math.round(bbox[0]);
@@ -2663,11 +2881,13 @@
             // Helper: draw annotation boxes onto a canvas context
             const drawAnnotationsOnCanvas = (ctx, canvasW, canvasH, objects) => {
                 const typeColors = {
-                    'vehicle': { stroke: '#22c55e', fill: 'rgba(34, 197, 94, 0.08)' },
-                    'license_plate': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.08)' },
-                    'wheel': { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.08)' },
-                    'attachment': { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.08)' },
-                    'made': { stroke: '#ec4899', fill: 'rgba(236, 72, 153, 0.08)' }
+                    'vehicle':       { stroke: '#22c55e', fill: 'rgba(34,  197, 94,  0.08)' },
+                    'license_plate': { stroke: '#3b82f6', fill: 'rgba(59,  130, 246, 0.08)' },
+                    'singleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                    'doubleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                    'wheel':         { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                    'attachment':    { stroke: '#8b5cf6', fill: 'rgba(139, 92,  246, 0.08)' },
+                    'make':          { stroke: '#ec4899', fill: 'rgba(236, 72,  153, 0.08)' }
                 };
 
                 const sorted = [...objects].sort((a, b) => {
@@ -2787,13 +3007,21 @@
                             
                             // FIXED: Better colors with reduced opacity
                             const typeColors = {
-                                'vehicle': { stroke: '#22c55e', fill: 'rgba(34, 197, 94, 0.08)' },
-                                'license_plate': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.08)' },
-                                'wheel': { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.08)' },
-                                'attachment': { stroke: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.08)' }
+                                'vehicle':       { stroke: '#22c55e', fill: 'rgba(34,  197, 94,  0.08)' },
+                                'license_plate': { stroke: '#3b82f6', fill: 'rgba(59,  130, 246, 0.08)' },
+                                'singleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                                'doubleWheel':   { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                                'wheel':         { stroke: '#f59e0b', fill: 'rgba(245, 158, 11,  0.08)' },
+                                'attachment':    { stroke: '#8b5cf6', fill: 'rgba(139, 92,  246, 0.08)' },
+                                'make':          { stroke: '#ec4899', fill: 'rgba(236, 72,  153, 0.08)' }
                             };
-                            
-                            const colors = typeColors[obj.type] || typeColors['vehicle'];
+                            // Source tint: 🩷 JSON-only  🔴 YOLO-only  🟢 both available
+                            const sourceStroke =
+                                annotationsSource === 'both' ? '#22c55e' :
+                                annotationsSource === 'json' ? '#db2777' :
+                                annotationsSource === 'yolo' ? '#ef4444' : null;
+                            const baseColors = typeColors[obj.type] || typeColors['vehicle'];
+                            const colors = sourceStroke ? { ...baseColors, stroke: sourceStroke } : baseColors;
                             
                             // FIXED: Convert coordinates properly
                             const x = Math.round(bbox[0]);
@@ -2952,12 +3180,28 @@
             // Get annotation type icon
             const getAnnotationIcon = (type, wheelType = null) => {
                 switch(type) {
-                    case 'vehicle': return '1';
-                    case 'license_plate': return '2';
-                    case 'wheel': return wheelType === 'double' ? '4' : '3';
-                    case 'attachment': return '5';
-                    case 'make': return '6';
-                    default: return '📦';
+                    case 'vehicle':       return '🚗';
+                    case 'license_plate': return '🔢';
+                    case 'singleWheel':   return '⚙️';
+                    case 'doubleWheel':   return '⚙️⚙️';
+                    case 'wheel':         return wheelType === 'double' ? '⚙️⚙️' : '⚙️';
+                    case 'attachment':    return '🚛';
+                    case 'make':          return '🏷️';
+                    default:              return '📦';
+                }
+            };
+
+            // Human-readable label for annotation types
+            const getAnnotationLabel = (type) => {
+                switch(type) {
+                    case 'vehicle':       return 'VEHICLE';
+                    case 'license_plate': return 'LICENSE PLATE';
+                    case 'singleWheel':   return 'WHEEL (SINGLE)';
+                    case 'doubleWheel':   return 'WHEEL (DOUBLE)';
+                    case 'wheel':         return 'WHEEL';
+                    case 'attachment':    return 'ATTACHMENT';
+                    case 'make':          return 'MAKE';
+                    default:              return type.replace(/_/g, ' ').toUpperCase();
                 }
             };
             
@@ -3129,16 +3373,16 @@
 								  </div>
 								</div>
 
-								{/* Label Format Selector */}
+								{/* Label Format Preference Selector */}
 								<div style={{ marginBottom: '8px', padding: '8px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #f59e0b' }}>
 								  <div style={{ fontSize: '10px', color: '#92400e', marginBottom: '6px', fontWeight: 'bold' }}>
 									⚙️ Pair Images With
 								  </div>
 								  <div style={{ display: 'flex', gap: '4px' }}>
 									{[
-									  { value: 'auto', label: 'Auto', title: 'Prefer JSON, fallback to YOLO' },
-									  { value: 'json', label: 'JSON', title: 'Always use JSON labels' },
-									  { value: 'yolo', label: 'YOLO', title: 'Always use YOLO labels' }
+									  { value: 'auto', label: 'Auto',  title: 'Prefer JSON, fallback to YOLO' },
+									  { value: 'json', label: 'JSON',  title: 'Always use JSON labels' },
+									  { value: 'yolo', label: 'YOLO',  title: 'Always use YOLO labels' }
 									].map(opt => (
 									  <button
 										key={opt.value}
@@ -3165,7 +3409,6 @@
 								  </div>
 								</div>
 
-								
 								{/* Dataset Index */}
 								<div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
 									<div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
@@ -3194,7 +3437,9 @@
 										Images: <b>{Object.keys(imageByBase).length}</b>
 										{" | "}YOLO: <b>{Object.keys(yoloByBase).length}</b>
 										{" | "}JSON: <b>{Object.keys(jsonByBase).length}</b>
-										{" | "}Paired: <b>{datasetIndex.filter(r => r.status === 'paired_yolo' || r.status === 'paired_json' || r.status === 'paired_both').length}</b>
+										{" | "}🟢 <b>{datasetIndex.filter(r => r.status === 'paired_both').length}</b>
+										{" "}🔴 <b>{datasetIndex.filter(r => r.status === 'paired_yolo').length}</b>
+										{" "}🩷 <b>{datasetIndex.filter(r => r.status === 'paired_json').length}</b>
 									</div>
 
 									<div className="scrollable-panel" style={{ maxHeight: '220px', paddingRight: '6px' }}>
@@ -3215,12 +3460,12 @@
 													}}
 												>
 													<div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-														{row.status === 'paired_both' ? '✅YJ' : row.status === 'paired_yolo' ? '✅Y' : row.status === 'paired_json' ? '✅J' : '🟡'}
+														{row.badge.icon} {row.badge.label}
 													</div>
 													<div style={{ fontSize: '10px', color: '#6b7280' }}>
 														{row.imageName}
 														{row.hasYolo ? ` • ${row.yoloLabelName}` : ''}
-														{row.hasJson ? ` • ${row.jsonLabelName}` : ''}
+														{row.hasJson ? ` • ${row.jsonLabelName}`  : ''}
 														{!row.hasYolo && !row.hasJson ? ' • (no label)' : ''}
 													</div>
 												</div>
@@ -3602,13 +3847,10 @@
                                             >
                                                 <div>  
                                                     <div className="annotation-type">
-                                                        {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'make' ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE') : obj.type.replace('_', ' ').toUpperCase()}
-                                                        {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
-                                                        {obj.type === 'wheel' && obj.wheel_type && (
-                                                            <span style={{ fontSize: '10px', color: '#6c757d', marginLeft: '4px' }}>
-                                                                ({obj.wheel_type.toUpperCase()})
-                                                            </span>
-                                                        )}
+                                                        {getAnnotationIcon(obj.type, obj.wheel_type)}{' '}
+                                                        {obj.type === 'make'
+                                                            ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE')
+                                                            : getAnnotationLabel(obj.type)}
                                                     </div>
                                                     <div className="annotation-info" style={{ color: '#6c757d' }}>
                                                         {Math.round(obj.bbox[2] - obj.bbox[0])}×{Math.round(obj.bbox[3] - obj.bbox[1])}px
@@ -3829,12 +4071,8 @@
                                     
 
 
-                                    {/* Render existing bounding boxes — sorted largest-first so smaller boxes sit on top in DOM order */}
-                                    {[...annotations.objects].sort((a, b) => {
-                                        const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
-                                        const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
-                                        return areaB - areaA;
-                                    }).map(obj => {
+                                    {/* Render existing bounding boxes */}
+                                    {annotations.objects.map(obj => {
                                         if (!imageRef.current) return null;
                                         
                                         // Use appropriate container based on mode
@@ -3869,7 +4107,7 @@
                                                     width: `${width}px`,
                                                     height: `${height}px`,
                                                     position: 'absolute',
-                                                    zIndex: isSelected ? 1000 : 1,
+                                                    zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
 
                                                     cursor: isDrawing ? 'crosshair' : 'move',
                                                     pointerEvents: isDrawing ? 'none' : 'auto'
@@ -4853,7 +5091,7 @@
                                                     fontSize: '12px'
                                                 }}>
                                                     <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-                                                        {getAnnotationIcon(selected.type, selected.wheel_type)} {selected.type === 'make' ? (selected.make ? `MAKE - ${selected.make}` : 'MAKE') : selected.type.replace('_', ' ').toUpperCase()}
+                                                        {getAnnotationIcon(selected.type, selected.wheel_type)}{' '}{selected.type === 'make' ? (selected.make ? `MAKE - ${selected.make}` : 'MAKE') : getAnnotationLabel(selected.type)}
 
                                                     </div>
                                                     
@@ -5149,12 +5387,8 @@
                                             draggable={false}
                                         />
                                         
-                                        {/* Render existing bounding boxes in fullscreen — sorted largest-first so smaller boxes sit on top in DOM order */}
-                                        {[...annotations.objects].sort((a, b) => {
-                                            const areaA = (a.bbox[2]-a.bbox[0]) * (a.bbox[3]-a.bbox[1]);
-                                            const areaB = (b.bbox[2]-b.bbox[0]) * (b.bbox[3]-b.bbox[1]);
-                                            return areaB - areaA;
-                                        }).map(obj => {
+                                        {/* Render existing bounding boxes in fullscreen */}
+                                        {annotations.objects.map(obj => {
                                             if (!imageRef.current || !fullscreenContainerRef.current) return null;
 
                                             
@@ -5185,7 +5419,7 @@
                                                         width: `${width}px`,
                                                         height: `${height}px`,
                                                         position: 'absolute',
-                                                        zIndex: isSelected ? 1000 : 1,
+                                                        zIndex: isSelected ? 1000 : 100 - ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) / 10000),
 
                                                         cursor: isDrawing ? 'crosshair' : 'move',
                                                         pointerEvents: isDrawing ? 'none' : 'auto'
@@ -5371,8 +5605,7 @@
                                                             fontWeight: 'bold',
                                                             marginBottom: '2px'
                                                         }}>
-                                                            {getAnnotationIcon(obj.type, obj.wheel_type)} {obj.type === 'make' ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE') : obj.type.replace('_', ' ').toUpperCase()}
-                                                            {obj.type === 'wheel' && obj.wheel_type && ` (${obj.wheel_type.toUpperCase()})`}
+                                                            {getAnnotationIcon(obj.type, obj.wheel_type)}{' '}{obj.type === 'make' ? (obj.make ? `MAKE - ${obj.make}` : 'MAKE') : getAnnotationLabel(obj.type)}
                                                         </div>
                                                         <div style={{
                                                             color: '#ccc',
